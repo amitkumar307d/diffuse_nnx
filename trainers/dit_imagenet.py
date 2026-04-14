@@ -16,7 +16,7 @@ import ml_collections
 import numpy as np
 
 # deps
-from data import local_imagenet_dataset, utils as data_utils
+from data import wds_imagenet_dataset, utils as data_utils
 from eval import fid
 from interfaces import continuous
 from utils import (
@@ -127,11 +127,13 @@ def train_and_evaluate(
     if config.data.batch_size % jax.device_count() > 0:
         raise ValueError('Batch size must be divisible by the number of devices')
 
-    dataset = local_imagenet_dataset.build_imagenet_dataset(
+    dataset = wds_imagenet_dataset.build_imagenet_dataset(
         is_train=True,
         data_dir=config.data.data_dir,
         image_size=image_size,
-        latent_dataset=config.data.latent_dataset
+        latent_dataset=config.data.latent_dataset,
+        world_size=jax.process_count(),
+        rank=jax.process_index()
     )
 
     encoder, model, optimizer, sampler, ema, learning_rate_fn = init_utils.build_models(config)
@@ -198,8 +200,8 @@ def train_and_evaluate(
 
     step = 0 if restore_step is None else restore_step
 
-    loader = local_imagenet_dataset.build_imagenet_loader(
-        config, dataset, offset_seed=step
+    loader = wds_imagenet_dataset.build_imagenet_loader(
+        config, dataset
     )
 
     if config.visualize.get('on'):

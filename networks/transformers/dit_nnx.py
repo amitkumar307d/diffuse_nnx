@@ -382,12 +382,14 @@ class DiT(nnx.Module):
         )
 
         # consider using scan
-        self.blocks = [
-            DiTBlock(
-                hidden_size, num_heads, mlp_ratio,
-                dtype=dtype, mlp_dropout=mlp_dropout, attn_dropout=attn_dropout, rngs=rngs
-            ) for _ in range(depth)
-        ]
+        self.blocks = nnx.List()
+        for _ in range(depth):
+            self.blocks.append(
+                DiTBlock(
+                    hidden_size, num_heads, mlp_ratio,
+                    dtype=dtype, mlp_dropout=mlp_dropout, attn_dropout=attn_dropout, rngs=rngs
+                )
+            )
 
         self.final_layer = FinalLayer(
             hidden_size, patch_size, self.out_channels, dtype=dtype, rngs=rngs

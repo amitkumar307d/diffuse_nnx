@@ -14,7 +14,7 @@ import optax
 # deps
 from interfaces import continuous, discrete, repa
 from networks.transformers import dit_nnx, lightning_dit_nnx, lightning_ddt_nnx
-from networks.encoders import dino, rae
+# from networks.encoders import rae
 from samplers import samplers
 from networks.encoders import sd_vae, rgb
 from utils import ema
@@ -23,7 +23,7 @@ from utils import ema
 ENCODER_REGISTRY = {
     'RGB': rgb.RGBEncoder,
     'StabilityVAE': sd_vae.StabilityVAE,
-    'RAE': rae.RAE,
+    # 'RAE': rae.RAE,
 }
 
 MODEL_REGISTRY = {
@@ -43,7 +43,7 @@ REPA_REGISTRY = {
 }
 
 DETECTOR_REGISTRY = {
-    'dino': dino.DINO,
+    # 'dino': dino.DINO,
 }
 
 OPTIMIZER_REGISTRY = {
@@ -158,7 +158,7 @@ def instantiate_encoder(config: ml_collections.ConfigDict):
     seed = config.seed + jax.process_index()
     base_rngs = nnx.Rngs(seed, gaussian=seed)
     encoder = ENCODER_REGISTRY[encoder_class](
-        config.encoder, dtype, encoded_pixels=config.data.latent_dataset, rngs=base_rngs
+        config=config.encoder, dtype=dtype, encoded_pixels=config.data.latent_dataset, rngs=base_rngs
     )
 
     pretrained_path = config.encoder.get('pretrained_path', None)
@@ -268,7 +268,7 @@ def instantiate_optimizer(
         learning_rate=config.learning_rate,
     )
     tx = OPTIMIZER_REGISTRY[config.optimizer_class](learning_rate=learning_rate_fn, **config.optimizer)
-    optimizer = nnx.Optimizer(model=model, tx=tx)
+    optimizer = nnx.ModelAndOptimizer(model=model, tx=tx)
     return optimizer, learning_rate_fn
 
 
