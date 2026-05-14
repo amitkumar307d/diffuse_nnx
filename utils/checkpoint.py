@@ -48,12 +48,12 @@ def save_checkpoints(
     """Save checkpoints for model and optimizer state.
     
     Args:
-        - ckpt_dir: checkpoint directory.
-        - step: current step.
-        - optimizer_state: optimizer state. **Note** this is an analogy to Flax.TrainState,
-            which includes both opt_state & model_state
-        - rng_state: the current rng key.
-        - ema_state: ema state.
+    - ckpt_dir: checkpoint directory.
+    - step: current step.
+    - optimizer_state: optimizer state. **Note** this is an analogy to Flax.TrainState,
+        which includes both opt_state & model_state
+    - rng_state: the current rng key.
+    - ema_state: ema state.
     """
     
     if mngr is None:
@@ -97,16 +97,16 @@ def restore_checkpoints(
     """Restore checkpoints for model and optimizer state.
     
     Args:
-        - ckpt_dir: checkpoint directory.
-        - step: current step.
-        - optimizer_state: abstract optimizer state. **Note** this is an analogy to Flax.TrainState,
-            which includes both opt_state & model_state
-        - rng_state: abstract rng state
-        - ema_state: abstract ema state.
+    - ckpt_dir: checkpoint directory.
+    - step: current step.
+    - optimizer_state: abstract optimizer state. **Note** this is an analogy to Flax.TrainState,
+        which includes both opt_state & model_state
+    - rng_state: abstract rng state
+    - ema_state: abstract ema state.
 
     Return:
-        - state: restored training state.
-        - ema_state: restored ema state.
+    - state: restored training state.
+    - ema_state: restored ema state.
     """
 
     if step is None:

@@ -97,11 +97,11 @@ class TestLatentDS(unittest.TestCase):
             jnp.all(batch['labels'] >= 0) and jnp.all(batch['labels'] < 1000)
         )
 
-    @unittest.skip("due to lack of dataset")
+    # @unittest.skip("due to lack of dataset")
     def test_loader_in256(self):
         dataset = lds.build_imagenet_dataset(
             is_train=True,
-            data_dir="/mnt/disks/data/prepared/imagenet_256",
+            data_dir="/data/imagenet/data/imagenet-vae-latents/imagenet_256",
             image_size=256,
             latent_dataset=True,
         )
@@ -166,7 +166,8 @@ class TestRawDS(unittest.TestCase):
     def test_loader(self):
         dataset = lds.build_imagenet_dataset(
             is_train=True,
-            data_dir="/mnt/disks/raw_data/datasets/imagenet",
+            # data_dir="/mnt/disks/raw_data/datasets/imagenet",
+            data_dir="/data/imagenet/data",
             image_size=256,
             latent_dataset=False,
         )

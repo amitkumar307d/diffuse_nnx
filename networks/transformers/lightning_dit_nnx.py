@@ -521,7 +521,7 @@ class LightningDiT(nnx.Module):
 
         # consider using scan
         norm_layer = self.get_norm_layer(attn_norm_layer)
-        self.blocks = [
+        self.blocks = nnx.List([
             LightningDiTBlock(
                 hidden_size, num_heads, mlp_ratio,
                 rms_norm=rms_norm, swiglu=swiglu, adaln_shift=adaln_shift, mlp_dropout=mlp_dropout,
@@ -531,7 +531,7 @@ class LightningDiT(nnx.Module):
                 qk_norm=qk_norm, norm_layer=norm_layer,
                 use_rope=use_rope, rope_init_theta=rope_init_theta, rope_init_scale=rope_init_scale,
             ) for _ in range(depth)
-        ]
+        ])
 
         self.final_layer = LightningDiTFinalLayer(
             hidden_size, patch_size, self.out_channels,

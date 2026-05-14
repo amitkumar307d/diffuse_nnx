@@ -35,7 +35,7 @@ def get_config(options='imagenet_64-B_2'):
     config.data                   = ml_collections.ConfigDict()
     config.data.data_dir          = data_preset.data_dir
     config.data.stat_dir          = data_preset.stat_dir
-    config.data.batch_size        = 1024
+    config.data.batch_size        = data_preset.batch_size
     config.data.image_size        = data_preset.image_size
     config.data.latent_dataset    = data_preset.get('latent_dataset', False)
     config.data.num_train_samples = data_preset.num_train_samples
@@ -85,7 +85,7 @@ def get_config(options='imagenet_64-B_2'):
     # Interface
     config.interface = ml_collections.ConfigDict()
     config.interface_class                = 'sit'
-    config.interface.train_time_dist_type = 'logitnormal'
+    config.interface.train_time_dist_type = 'uniform'
     config.interface.t_mu                 = 0.0
     config.interface.t_sigma              = 1.0
     config.interface.n_mu                 = 0.0

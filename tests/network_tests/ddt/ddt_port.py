@@ -99,3 +99,12 @@ if __name__ == "__main__":
     jax_out = model(x, t, y)[0]
 
     print("diff: ", np.abs(th_out - jax_out).max())
+
+    _, rng_state, state = nnx.split(model, nnx.RngState, ...)
+    ckptr = ocp.Checkpointer(ocp.CompositeCheckpointHandler())
+    ckptr.save(
+        epath.Path("gs://willis-storage/jmt/pretrained_ckpts/nnx") / "DDTXL_256",
+        args=ocp.args.Composite(
+            ema_state=ocp.args.StandardSave(state),
+        ),
+    )

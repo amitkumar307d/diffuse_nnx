@@ -25,6 +25,11 @@ google-cloud-storage
 torch==2.5.1
 torchvision==0.20.1
 
+# Additional dependencies for the new codebase
+datasets
+diffusers
+chex
+
 # Documentation dependencies
 sphinx>=7.0.0
 pydata-sphinx-theme>=0.15.0

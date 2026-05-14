@@ -17,14 +17,27 @@ from samplers import samplers
 
 
 @functools.partial(
-    nnx.jit,
-    static_argnums=(6, 7)
+    jax.jit,
+    static_argnums=(5, 6, 7, 8, 9),
 )
-def sample_fn(net, g_net, encoder, rngs, n, c, guidance_scale, sampler):
-    """:meta private:"""
-    x = sampler.sample(
+def _sample_jit(net_state, g_net_state, rngs_state, n, c,
+                net_graph, g_net_graph, rngs_graph, guidance_scale, sampler):
+    net = nnx.merge(net_graph, net_state)
+    g_net = nnx.merge(g_net_graph, g_net_state)
+    rngs = nnx.merge(rngs_graph, rngs_state)
+    return sampler.sample(
         rngs, net, n, y=c, g_net=g_net,
         guidance_scale=guidance_scale
+    )
+
+
+def sample_fn(net, g_net, encoder, rngs, n, c, guidance_scale, sampler):
+    net_graph, net_state = nnx.split(net)
+    g_net_graph, g_net_state = nnx.split(g_net)
+    rngs_graph, rngs_state = nnx.split(rngs)
+    x = _sample_jit(
+        net_state, g_net_state, rngs_state, n, c,
+        net_graph, g_net_graph, rngs_graph, guidance_scale, sampler,
     )
     return encoder.decode(x)
 
@@ -39,19 +52,21 @@ def visualize(
     g_net: nnx.Module | None = None,
     guidance_scale: float | None = None,
     mesh: Mesh | None = None,
-):
+) -> jnp.ndarray:
     """Generate and log samples from the model.
     
     Args:
-        - config: configuration for the training.
-        - net: nnx.Module, the network for training.
-        - ema_net: nnx.Module, the ema network.
-        - encoder: nnx.Module, the encoder for training.
-        - n: jnp.ndarray, the initial noise.
-        - c: jnp.ndarray, the initial condition.
-        - guidance_scale: float, the guidance weight for the guidance network.
-        - sampler: samplers.Samplers, the sampler for the network.
+    - config: configuration for the training.
+    - net: nnx.Module, the network for training.
+    - ema_net: nnx.Module, the ema network.
+    - encoder: nnx.Module, the encoder for training.
+    - n: jnp.ndarray, the initial noise.
+    - c: jnp.ndarray, the initial condition.
+    - guidance_scale: float, the guidance weight for the guidance network.
+    - sampler: samplers.Samplers, the sampler for the network.
 
+    Returns:
+    - x: jnp.ndarray, the generated sample.
     """
 
     image_size = config.data.image_size // config.encoder.get('downsample_factor', 1)
@@ -104,16 +119,9 @@ def visualize_reconstruction(
     encoder: nnx.Module,
     x: jnp.ndarray,
     mesh: Mesh | None = None,
-):
-    """Reconstruct and log samples from the encoder.
-
-    Args:
-        - config: the configuration for the training.
-        - encoder: the encoder for the network.
-        - x: the original samples.
-        - mesh: the mesh for the distributed sampling.
-    """
-    x = sharding_utils.make_fsarray_from_local_slice(x, mesh.devices.flatten())
+) -> jnp.ndarray:
+    """Plotting the image"""
+    # x = sharding_utils.make_fsarray_from_local_slice(x, mesh.devices.flatten())
     wandb_utils.log_images(
         (x.astype(jnp.float32) * 127.5 + 128).clip(0, 255).astype(jnp.uint8),
         'encoder_original',
@@ -122,7 +130,7 @@ def visualize_reconstruction(
 
     logging.info(f"Reconstructing images...")
 
-    z = encoder.encode(x)
+    z = encoder.encode(x, key=jax.random.PRNGKey(0))  # <-- okay to fix key
     x_rec = encoder.decode(z)
 
     wandb_utils.log_images(x_rec, 'encoder_reconstructed', step=0)

@@ -14,7 +14,7 @@ import optax
 # deps
 from interfaces import continuous, discrete, repa
 from networks.transformers import dit_nnx, lightning_dit_nnx, lightning_ddt_nnx
-# from networks.encoders import rae
+# from networks.encoders import dino, rae
 from samplers import samplers
 from networks.encoders import sd_vae, rgb
 from utils import ema
@@ -42,9 +42,9 @@ REPA_REGISTRY = {
     'repa': repa.DiT_REPA,
 }
 
-DETECTOR_REGISTRY = {
-    # 'dino': dino.DINO,
-}
+# DETECTOR_REGISTRY = {
+#     'dino': dino.DINO,
+# }
 
 OPTIMIZER_REGISTRY = {
     'adam': optax.adam,
@@ -56,6 +56,7 @@ SAMPLER_REGISTRY = {
     'euler': samplers.EulerSampler,
     'euler_jump': samplers.EulerJumpSampler,
     'heun': samplers.HeunSampler,
+    'ucgm': samplers.UCGMSampler,
     'euler-maruyama': samplers.EulerMaruyamaSampler,
 }
 
@@ -81,7 +82,7 @@ def create_learning_rate_fn(
 ):
     """Create learning rate schedule."""
     warmup_fn = optax.linear_schedule(
-        init_value=0., end_value=learning_rate,
+        init_value=learning_rate, end_value=learning_rate,
         transition_steps=config.warmup_steps
     )
     poly_warmup_fn = optax.polynomial_schedule(
@@ -158,7 +159,7 @@ def instantiate_encoder(config: ml_collections.ConfigDict):
     seed = config.seed + jax.process_index()
     base_rngs = nnx.Rngs(seed, gaussian=seed)
     encoder = ENCODER_REGISTRY[encoder_class](
-        config=config.encoder, dtype=dtype, encoded_pixels=config.data.latent_dataset, rngs=base_rngs
+        config.encoder, dtype, encoded_pixels=config.data.latent_dataset, rngs=base_rngs
     )
 
     pretrained_path = config.encoder.get('pretrained_path', None)

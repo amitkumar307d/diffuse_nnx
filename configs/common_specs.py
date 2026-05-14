@@ -6,8 +6,9 @@ _imagenet_data_presets = {
         stat_dir='/mnt/disks/data/stats/imagenet_64.pkl'
     ),
     'imagenet_256': dict(
+        # data_dir='/data/imagenet/data/imagenet-vae-latents/imagenet_256', image_size=256, batch_size=256, latent_dataset=True, num_train_samples=1281167,
         data_dir='/mnt/disks/data/imagenet_256', image_size=256, batch_size=256, latent_dataset=True, num_train_samples=1281167,
-        stat_dir='/mnt/disks/data/stats/imagenet_256.pkl'
+        stat_dir='/data/imagenet/stats/imagenet_256.pkl'
     ),
     'imagenet_512': dict(
         data_dir='/mnt/disks/data/prepared/imagenet_512', image_size=512, batch_size=256, latent_dataset=True, num_train_samples=1281167,
@@ -19,10 +20,10 @@ _imagenet_data_presets = {
     ),
     'imagenet_raw_256': dict(
         data_dir='/mnt/disks/data', image_size=256, batch_size=256, latent_dataset=False, num_train_samples=1281167,
-        stat_dir='/mnt/disks/data/stats/imagenet_256.pkl'
+        stat_dir='/data/imagenet/stats/imagenet_256.pkl'
     ),
     'imagenet_raw_512': dict(
-        data_dir='/mnt/disks/raw_data/datasets/imagenet', image_size=512, batch_size=256, latent_dataset=False, num_train_samples=1281167,
+        data_dir='/mnt/disks/data', image_size=512, batch_size=256, latent_dataset=False, num_train_samples=1281167,
         stat_dir='/mnt/disks/data/stats/imagenet_512.pkl'
     ),
 }
@@ -67,7 +68,13 @@ _imagenet_rae_encoder_presets = {
     'imagenet_raw_256': dict(
         encoder='RAE',
         encoder_kwargs=dict(
-            downsample_factor=16, latent_channels=768, pretrained_path='/home/nm3607/model.pt'
+            downsample_factor=16, latent_channels=768, pretrained_path='/home/willis/model.pt'
+        )
+    ),
+    'imagenet_raw_512': dict(
+        encoder='RAE',
+        encoder_kwargs=dict(
+            downsample_factor=16, latent_channels=768, pretrained_path='/home/willis/model_512.pt'
         )
     )
 }
@@ -76,7 +83,7 @@ _dit_network_presets = {
     'S': dict(hidden_size=384, depth=12, num_heads=6),
     'B': dict(hidden_size=768, depth=12, num_heads=12),
     'L': dict(hidden_size=1024, depth=24, num_heads=16),
-    'XL': dict(hidden_size=1152, depth=28, num_heads=16),
+    'XL': dict(hidden_size=1280, depth=28, num_heads=10),
 }
 
 _ddt_network_presets = {

@@ -121,6 +121,7 @@ def get_config(options='imagenet_64-B_2'):
     config.visualize.on             = True
     config.visualize.num_samples    = 64
     config.visualize.guidance_scale = 2.0
+    config.visualize.visualize_reconstruction = True
 
     # Evaluation
     config.eval = ml_collections.ConfigDict()

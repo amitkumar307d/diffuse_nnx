@@ -197,6 +197,13 @@ def convert_decoder_weights(
         else:
             output_path.unlink()
     # output_path.parent.mkdir(parents=True, exist_ok=True)
+    ckptr = ocp.Checkpointer(ocp.CompositeCheckpointHandler())
+    ckptr.save(
+        epath.Path("gs://willis-storage/jmt/pretrained_ckpts/nnx") / "RAEXL_256",
+        args=ocp.args.Composite(
+            ema_state=ocp.args.StandardSave(decoder_state),
+        ),
+    )
     print(f"Converted weights saved to {output_path} using Orbax")
 
 

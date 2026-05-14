@@ -41,7 +41,7 @@ class EMA(nnx.Module):
         self.decay = decay
 
     def update(self, net: nnx.Module):
-        """Update the EMA model state."""
+        """Update the EMA model."""
         # target_net = get_network(net)
         # target_ema = get_network(self.ema)
         state, ema_state = nnx.state(net, nnx.Param), nnx.state(self.ema, nnx.Param)
@@ -52,11 +52,9 @@ class EMA(nnx.Module):
         nnx.update(self.ema, ema_state)
     
     def get(self):
-        """Return the pure EMA model state."""
         return jax.device_get(nnx.split(self.ema, nnx.RngKey, ...)[-1])
     
     def load(self, state: nnx.State):
-        """Load the saved / pretrained EMA model state."""
         graphdef, rng_state, _ = nnx.split(self.ema, nnx.RngKey, ...)
         self.ema = nnx.merge(graphdef, rng_state, state)
 
@@ -65,14 +63,12 @@ class EMA(nnx.Module):
 # Below are PowerEMA from EDM2 https://github.com/NVlabs/edm2
 
 def exp_to_std(exp):
-    """:meta private:"""
     exp = np.float64(exp)
     std = np.sqrt((exp + 1) / (exp + 2) ** 2 / (exp + 3))
     return std
 
 
 def std_to_exp(std):
-    """:meta private:"""
     std = np.float64(std)
     tmp = std.flatten() ** -2
     exp = [np.roots([1, 7, 16 - t, 12 - t]).real.max() for t in tmp]
@@ -81,7 +77,6 @@ def std_to_exp(std):
 
 
 def power_function_response(ofs, std, len, axis=0):
-    """:meta private:"""
     ofs, std = np.broadcast_arrays(ofs, std)
     ofs = np.stack([np.float64(ofs)], axis=axis)
     exp = np.stack([std_to_exp(std)], axis=axis)
@@ -94,7 +89,6 @@ def power_function_response(ofs, std, len, axis=0):
 
 
 def power_function_correlation(a_ofs, a_std, b_ofs, b_std):
-    """:meta private:"""
     a_exp = std_to_exp(a_std)
     b_exp = std_to_exp(b_std)
     t_ratio = a_ofs / b_ofs
@@ -106,13 +100,11 @@ def power_function_correlation(a_ofs, a_std, b_ofs, b_std):
 
 
 def power_function_beta(exp, step):
-    """:meta private:"""
     beta = (1 - 1 / step) ** (exp + 1)
     return beta
 
 
 def solve_posthoc_coefficients(in_ofs, in_std, out_ofs, out_std): # => [in, out]
-    """:meta private:"""
     in_ofs, in_std = np.broadcast_arrays(in_ofs, in_std)
     out_ofs, out_std = np.broadcast_arrays(out_ofs, out_std)
     rv = lambda x: np.float64(x).reshape(-1, 1)
@@ -125,9 +117,6 @@ def solve_posthoc_coefficients(in_ofs, in_std, out_ofs, out_std): # => [in, out]
 
 
 class PowerEMA:
-    """TODO: to be updated.
-    
-    :meta private:"""
 
     def __init__(self, net: nnx.Module, stds: float):
         self.net = net

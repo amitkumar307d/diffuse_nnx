@@ -78,7 +78,7 @@ def get_config(options='imagenet_64-B_2'):
     # Interface
     config.interface = ml_collections.ConfigDict()
     config.interface_class                = 'sit'
-    config.interface.train_time_dist_type = 'uniform'
+    config.interface.train_time_dist_type = 'logitnormal'
     config.interface.t_mu                 = 0.0
     config.interface.t_sigma              = 1.0
     config.interface.n_mu                 = 0.0

@@ -23,22 +23,12 @@ from samplers import samplers
 
 
 def get(dictionary, key):
-    """Get a value from a dictionary. If value not present, default to None.
-    
-    Returns:
-        - Any: value, the value from the dictionary or None if not present.
-    """
     if dictionary is None or key not in dictionary:
         return None
     return dictionary[key]
 
 
 def download(url, ckpt_dir=None):
-    """Download a file from a URL to ckpt_dir.
-    
-    Returns:
-        - str: ckpt_file, path to the downloaded checkpoint file.
-    """
     name = url[url.rfind('/') + 1 : url.rfind('?')]
     if ckpt_dir is None:
         ckpt_dir = tempfile.gettempdir()
@@ -72,11 +62,7 @@ def download(url, ckpt_dir=None):
 
 
 def all_gather(x: jnp.ndarray) -> jnp.ndarray:
-    """convenient wrapper for jax.lax.all_gather
-    
-    Returns:
-        - jnp.ndarray: all_gathered, the gathered array from all devices.
-    """
+    """convenient wrapper for jax.lax.all_gather"""
     assert x.shape[0] == jax.local_device_count(), f"Expected first dimension to be the number of local devices, got {x.shape[0]} != {jax.local_device_count()}"
     all_gather_fn = lambda x: jax.lax.all_gather(x, axis_name='data', tiled=True)
     all_gathered = jax.pmap(all_gather_fn, axis_name='data')(x)[0]
@@ -97,9 +83,6 @@ def build_keep_indices(
     This function simulates the behavior of a DataLoader with the item_subset sampler.
     The intent is to find and remove the indices of images that are processed twice to avoid 
     biasing FID.
-    
-    Returns:
-        - list: final_indices, list of keep indices for each batch.
     """
     keep_indices = jnp.array(item_subset) < len_dataset
     final_indices = []
@@ -115,11 +98,7 @@ def build_eval_loader(
     batch_size: int,
     num_workers: int = 8,
 ) -> torch.utils.data.DataLoader:
-    """Build the dataloader for evaluation.
-    
-    Returns:
-        - tuple[torch.utils.data.DataLoader, list]: (loader, keep_indices), the dataloader and keep indices.
-    """
+    """Build the dataloader for evaluation."""
     dataset_len = len(dataset)
     n = jax.process_count()
     pad_factor = batch_size
@@ -149,11 +128,7 @@ def build_eval_loader(
 
 
 def get_detector(config: ml_collections.ConfigDict):
-    """Get the sampler for fid evaluation.
-    
-    Returns:
-        - tuple[dict, Callable]: (params, forward), detector parameters and forward function.
-    """
+    """Get the sampler for fid evaluation."""
     if config.eval.detector == 'inception':
         logging.info('Loading InceptionV3 model for FID calculation...')
         detector = inception.InceptionV3(pretrained=True)
@@ -192,11 +167,7 @@ def calculate_fid(
     stats: dict[str, np.ndarray],
     ref_stats: dict[str, np.ndarray]
 ) -> float:
-    """Calculate the FID score between stats and ref_stats.
-    
-    Returns:
-        - float: fid_score, the calculated FID score.
-    """
+    """Calculate the FID score between stats and ref_stats."""
 
     m = np.square(stats['mu'] - ref_stats['mu']).sum()
     s, _ = scipy.linalg.sqrtm(np.dot(stats['sigma'], ref_stats['sigma']), disp=False)

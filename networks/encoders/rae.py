@@ -36,7 +36,7 @@ class RAE(nnx.Module):
         dtype: jnp.dtype = jnp.float32,
         pretrained_path: str = 'facebook/dinov2-with-registers-base',
         stats_path: str = "stats/wReg_base/stat.pt",
-        resolution: int = 224,
+        resolution: int = 448,
         encoded_pixels: bool = True,
         *,
         rngs: nnx.Rngs
@@ -88,8 +88,6 @@ class RAE(nnx.Module):
             x = jax.image.resize(
                 x, (x.shape[0], self.encoder_input_size, self.encoder_input_size, x.shape[-1]), method='bicubic'
             )
-        
-        # our input is in the range of [-1, 1]
         x = (x + 1.0) / 2.0
         x = (x - encoder_mean) / encoder_std
         z = self.encoder(x, deterministic=deterministic)
@@ -98,7 +96,7 @@ class RAE(nnx.Module):
         h = w = int(math.sqrt(n))
         z = z.reshape(b, h, w, c)
 
-        z = (z - latent_mean) / jnp.sqrt(latent_var + self.eps)
+        # z = (z - latent_mean) / jnp.sqrt(latent_var + self.eps)
 
         return z
 

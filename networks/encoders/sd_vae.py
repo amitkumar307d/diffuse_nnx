@@ -2,14 +2,19 @@
 # The VAE part of this file is from: https://github.com/patil-suraj/stable-diffusion-jax/blob/main/stable_diffusion_jax/modeling_vae.py
 
 # built-in libs
+from __future__ import annotations
 import math
 from functools import partial
 import os
-from pathlib import Path
 import pickle
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # external libs
+from chex import Array, PRNGKey
+from diffusers import FlaxAutoencoderKL
 from flax import linen as nn
 from flax import nnx
 from flax.core.frozen_dict import FrozenDict
@@ -24,8 +29,88 @@ from networks.encoders import utils
 
 VAE_PRECISION = None
 
+class StabilityVAE:
+    """Thin wrapper around `FlaxAutoencoderKL` with deterministic encode helpers."""
 
-class StabilityVAE(nnx.Module):
+    def __init__(
+        self,
+        config: ml_collections.ConfigDict,
+        dtype: jnp.dtype = jnp.float32,
+        pretrained_path: str = 'pcuenq/sd-vae-ft-mse-flax',
+        encoded_pixels: bool = True,
+        rngs: nnx.Rngs = nnx.Rngs(0, gaussian=0),
+    ):
+        module, params = FlaxAutoencoderKL.from_pretrained(pretrained_path)
+        self.module = module
+        self.params = jax.device_get(params)
+        self.scaling_factor = float(module.config.scaling_factor)
+        self.encoded_pixels = encoded_pixels
+
+    @staticmethod
+    def _to_nchw(x: Array) -> Array:
+        return jnp.transpose(x, (0, 3, 1, 2))
+
+    @staticmethod
+    def _to_nhwc(x: Array) -> Array:
+        return jnp.transpose(x, (0, 2, 3, 1))
+
+    # Keep `self` and the deterministic flag static for compilation caching.
+    @partial(jax.jit, static_argnums=(0,), static_argnames=("sample_posterior", "deterministic", "encoded_pixels"))
+    def encode(
+        self,
+        images: Array,
+        key: Optional[PRNGKey] = None,
+        *,
+        sample_posterior: bool = True,
+        deterministic: bool = True,
+        encoded_pixels: bool | None = None,
+    ) -> Array:
+        """Encode RGB images in [-1, 1] range to scaled latents (NHWC).
+
+        Args:
+            images: Batch of images shaped (B, H, W, 3) normalized to [-1, 1].
+            key: RNG key (only used when `deterministic=False`).
+            deterministic: When True, return posterior mean instead of sampling.
+            encoded_pixels: Override for self.encoded_pixels. If None, uses instance default.
+        """
+        if encoded_pixels is None:
+            encoded_pixels = self.encoded_pixels
+        if encoded_pixels:
+            mean, std = jnp.split(images.astype(jnp.float32), 2, axis=-1)
+            latents= mean + jax.random.normal(key, mean.shape) * std
+        else:
+            pixels = self._to_nchw(images)
+            posterior = self.module.apply(
+                {"params": self.params},
+                pixels,
+                method=self.module.encode,
+            ).latent_dist
+
+            if sample_posterior:
+                if key is None:
+                    raise ValueError("PRNGKey is required when deterministic=False")
+                latents = posterior.sample(key)
+            else:
+                latents = posterior.mean
+
+        # Diffusers already returns NHWC latents; avoid extra transposes
+        latents = latents * self.scaling_factor
+        return latents
+
+    @partial(jax.jit, static_argnums=(0,))
+    def decode(self, latents: Array) -> Array:
+        """Decode NHWC latents (scaled) back to RGB images in [-1, 1]."""
+        latents_unscaled = latents / self.scaling_factor
+        images = self.module.apply(
+            {"params": self.params},
+            latents_unscaled,
+            method=self.module.decode,
+        ).sample
+        x = (images.astype(jnp.float32) * 127.5 + 128).clip(0, 255).astype(jnp.uint8)
+        return self._to_nhwc(x)
+
+
+class StabilityNNXVAE(nnx.Module):
 
     def __init__(
         self,
@@ -53,23 +138,25 @@ class StabilityVAE(nnx.Module):
         # self.vae = vae.bind({'params': vae_params}, rngs={'gaussian': rngs.gaussian()})
     
     def initialize(self):
-        ckpt_path = os.path.join(Path(__file__).parent, self.pretrained_path)
+        home_dir = os.path.expanduser('~')
+        ckpt_path = os.path.join(
+            home_dir, 'jmt/networks/encoders', self.pretrained_path
+        )
         if not os.path.exists(ckpt_path):
-            utils.download_blob('will-data', 'stats/vae_trial1.pkl', ckpt_path)
+            utils.download_blob('tpu-poc-test', 'vae_trial1.pkl', ckpt_path)
             
         with open(ckpt_path, 'rb') as f:
             params = pickle.load(f)
         return params
 
-    @nnx.jit
-    def encode(self, x, sample_posterior=True, deterministic=True):
-        # Note: deterministic here is controlling dropout behavior, not sampling behavior
+    # @nnx.jit
+    def encode(self, x, sample_posterior=True, deterministic=True, key=None):
         return self.vae(
             x, sample_posterior, deterministic, self.encoded_pixels,
             method='encode', rngs=self.rngs
         )
 
-    @nnx.jit
+    # @nnx.jit
     def decode(self, z, deterministic=True):
         # Note: deterministic here is controlling dropout behavior, not sampling behavior
         z = jax.lax.stop_gradient(z)

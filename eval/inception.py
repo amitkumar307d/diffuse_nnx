@@ -3,7 +3,6 @@
 # built-in libs
 import os
 import functools
-from pathlib import Path
 import pickle
 from typing import Callable, Iterable, Optional, Tuple, Union, Any
 
@@ -48,8 +47,12 @@ class InceptionV3(nn.Module):
 
     def setup(self):
         if self.pretrained:
-            param_path = os.path.join(Path(__file__).parent, 'inception_v3_weights_fid.pickle')
-            self.params_dict = pickle.load(open(param_path, 'rb'))
+            self.params_dict = pickle.load(open(
+                os.path.join(
+                    os.path.expanduser('~'),
+                    'jmt/eval/inception_v3_weights_fid.pickle'
+                ), 'rb')
+            )
             self.num_classes_ = 1000
         else:
             self.params_dict = None

@@ -81,7 +81,7 @@ class TestDINO(unittest.TestCase):
     def assert_close(self, jax_arr: jnp.ndarray, th_arr: torch.Tensor, atol=1e-6, rtol=1e-5):
         res = np.allclose(
             np.asarray(jax_arr, dtype=jnp.float32),
-            th_arr.detach().numpy().astype(jnp.float32),
+            th_arr.numpy().astype(jnp.float32),
             atol=atol,
             rtol=rtol
         )
@@ -89,7 +89,7 @@ class TestDINO(unittest.TestCase):
             np.abs(
                 np.asarray(jax_arr, dtype=jnp.float32)
                 -
-                th_arr.detach().numpy().astype(jnp.float32)
+                th_arr.numpy().astype(jnp.float32)
             )
         )
         if not res:

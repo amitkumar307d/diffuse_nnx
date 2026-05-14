@@ -28,14 +28,14 @@ def get_config(options='imagenet_64-B_2'):
 
     config.total_steps           = 7_000_000
     config.log_every_steps       = 100
-    config.save_every_steps      = 50_000
+    config.save_every_steps      = 5_000
     config.visualize_every_steps = 25_000
 
     # Dataset
     config.data                   = ml_collections.ConfigDict()
     config.data.data_dir          = data_preset.data_dir
     config.data.stat_dir          = data_preset.stat_dir
-    config.data.batch_size        = 1024
+    config.data.batch_size        = data_preset.batch_size
     config.data.image_size        = data_preset.image_size
     config.data.latent_dataset    = data_preset.get('latent_dataset', False)
     config.data.num_train_samples = data_preset.num_train_samples
@@ -101,9 +101,9 @@ def get_config(options='imagenet_64-B_2'):
     # Optimizer
     config.optimizer = ml_collections.ConfigDict()
     config.learning_rate           = 0.0002
-    config.learning_rate_schedule  = 'constant'
-    config.warmup_steps            = 0
-    config.min_abs_lr              = 0.0
+    config.learning_rate_schedule  = 'cosine'
+    config.warmup_steps            = 50_000
+    config.min_abs_lr              = 2e-5
     config.optimizer_class         = 'adamw'
     config.optimizer.b1            = 0.9
     config.optimizer.b2            = 0.95
@@ -130,7 +130,7 @@ def get_config(options='imagenet_64-B_2'):
     config.pretrained_ckpt = ''
     config.checkpoint = ml_collections.ConfigDict()
     config.checkpoint.options                            = ml_collections.ConfigDict()
-    config.checkpoint.options.save_interval_steps        = 50_000
+    config.checkpoint.options.save_interval_steps        = 5_000
     config.checkpoint.options.max_to_keep                = 8
     config.checkpoint.options.keep_period                = 100_000
     config.checkpoint.options.enable_async_checkpointing = False

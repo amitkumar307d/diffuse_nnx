@@ -1,2 +1,2 @@
-"""Work in Progress."""
+"""File containing the interface for discretized diffusion / flow matching."""
 

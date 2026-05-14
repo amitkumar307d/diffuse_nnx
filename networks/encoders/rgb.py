@@ -28,8 +28,7 @@ class RGBEncoder(nnx.Module):
         self.config = config
         self.dtype = dtype
 
-    def encode(self, x, sample_posterior=True, deterministic=True):
-        # Note: deterministic here is controlling dropout behavior, not sampling behavior
+    def encode(self, x, sample_posterior=True, deterministic=True, key=None):
         return x.astype(jnp.float32) / 127.5 - 1
 
     def decode(self, z, deterministic=True):

@@ -10,12 +10,10 @@ from google.cloud import storage
 # deps
 
 def _item_to_value(iterator, item):
-    """:meta private:"""
     return item
 
 
 def list_directories(bucket_name, prefix):
-    """List all directories in the given bucket."""
     if prefix and not prefix.endswith('/'):
         prefix += '/'
 
@@ -40,15 +38,10 @@ def list_directories(bucket_name, prefix):
 
 
 def count_directories(bucket_name, prefix):
-    """
-    Count the number of directories in the given bucket.
-    Used to obtain the numeral prefix for the checkpoint.
-    """
     return len(list_directories(bucket_name, prefix))
 
 
 def directory_exists(bucket_name, prefix, directory):
-    """Check wether the given directory exists under the given bucket."""
     directories = list_directories(bucket_name, prefix)
     directories = [x.split('/')[-2] for x in directories]
     directories = [x[4:] for x in directories]  # Remove indexing
@@ -56,7 +49,6 @@ def directory_exists(bucket_name, prefix, directory):
 
 
 def get_directory_index(bucket_name, prefix, directory):
-    """Get the index of the given directory under the given bucket."""
     directories = list_directories(bucket_name, prefix)
     directories = [x.split('/')[-2] for x in directories]
     directories_without_indices = [x[4:] for x in directories]  # Remove indexing
@@ -66,7 +58,7 @@ def get_directory_index(bucket_name, prefix, directory):
 
 
 def list_checkpoints(bucket_name, prefix, workdir):
-    """List all checkpoints in the given directory."""
+
     if not directory_exists(bucket_name, prefix, workdir):
         raise ValueError(f"Directory {workdir} does not exist.")
     
@@ -77,8 +69,26 @@ def list_checkpoints(bucket_name, prefix, workdir):
     return [x for x in ckpt_iterator], workdir
 
 
+def list_ddpm_checkpoints(bucket_name, prefix, workdir):
+  
+    if not directory_exists(bucket_name, prefix, workdir):
+        raise ValueError(f"Directory {workdir} does not exist.")
+    
+    index = get_directory_index(bucket_name, prefix, workdir)
+    work_prefix = prefix + f"/{index:03d}_{workdir}"
+    sub_bucket_name = bucket_name + "/" + prefix
+    sub_bucket = storage.Client().get_bucket(bucket_name)
+    ckpt_blobs = list(sub_bucket.list_blobs(prefix=f"{prefix}/{index:03d}_{workdir}/checkpoint"))
+    ckpt_list = []
+    for blob in ckpt_blobs:
+        ckpt_list.append(blob.name)
+    workdir = "gs://" + bucket_name + "/" + work_prefix
+    # print(ckpt_blob)
+    # ckpt_iterator = list_directories(bucket_name, work_prefix)
+    return ckpt_list, workdir
+
+
 def get_checkpoint_steps(bucket_name, prefix, workdir):
-    """Get the postfixed steps of all checkpoints in the given directory."""
 
     ckpts, workdir = list_checkpoints(bucket_name, prefix, workdir)
     ckpts = [x.split('/')[-2] for x in ckpts]

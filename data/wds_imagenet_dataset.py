@@ -64,7 +64,7 @@ def build_imagenet_dataset(
 
         # shard to multiprocesses
         dataset = wds.WebDataset(
-            data_dir, shardshuffle=True, nodesplitter=multiproc_splitter, workersplitter=wds.split_by_worker
+            data_dir, shardshuffle=True, nodesplitter=multiproc_splitter
         )
         # data decoding
         dataset = dataset.shuffle(shuffle_buffer).decode("pil").to_tuple("jpg", "json")
@@ -85,6 +85,8 @@ def build_imagenet_loader(
     """Build loader for WebDataset."""
     batch_size = config.data.batch_size // jax.process_count()
     num_workers = config.data.num_workers
+    
+    assert num_workers <= 1, "WebDataset does not support multi-process dataloading yet."
 
     if use_torch:
         loader = torch.utils.data.DataLoader(
@@ -99,6 +101,6 @@ def build_imagenet_loader(
     else:
         loader = wds.WebLoader(dataset, batch_size=None, num_workers=num_workers)
         # We unbatch, shuffle, and rebatch to mix samples from different workers.
-        loader = loader.shuffle(1000).batched(batch_size)
+        loader = loader.unbatched().shuffle(1000).batched(batch_size)
 
     return loader

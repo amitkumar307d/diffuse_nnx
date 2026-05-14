@@ -12,7 +12,7 @@ Pass the Python file and preset identifier when launching a job:
 ```bash
 python main.py \
   --config=configs/dit_imagenet.py:imagenet_256-XL_2 \
-  --bucket=$GCS_BUCKET \
+  --bucket=$JMT_GCS_BUCKET \
   --workdir=exp_name
 ```
 

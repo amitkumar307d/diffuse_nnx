@@ -4,18 +4,22 @@
 import functools
 import json
 import os
+from pathlib import Path
 import random as _random
 import warnings
 import zipfile
+from typing import Optional, Tuple
 
 # external libs
 from absl import logging
+from datasets import load_from_disk, Image as HFImage
 import jax
 import ml_collections
 import numpy as np
 import PIL
 import torch
 from torchvision import datasets, transforms
+from torch.utils.data import Dataset
 
 try:
     import pyspng  # pyright: ignore [reportMissingImports]
@@ -24,6 +28,113 @@ except ImportError:
 
 # deps
 from data import utils
+
+
+class ImageNetHFDataset(Dataset):
+    """
+    PyTorch Dataset for ImageNet using HuggingFace Arrow format.
+
+    This dataset loads ImageNet images and labels from pre-processed Arrow files,
+    which provide efficient memory-mapped access to the data without requiring
+    the full dataset to be loaded into memory.
+
+    Args:
+        data_dir: Path to directory containing the arrow dataset.
+                 Should contain 'imagenet-latents-images' folder.
+        split: Dataset split, either "train" or "val". Default: "train".
+        transform: Optional transform to apply to images.
+
+    Example:
+        >>> from torchvision import transforms
+        >>> transform = transforms.Compose([
+        ...     transforms.Resize(384),
+        ...     transforms.RandomCrop(256),
+        ...     transforms.ToTensor(),
+        ... ])
+        >>> dataset = ImageNetHFDataset(
+        ...     data_dir="../repa-baseline/data",
+        ...     split="train",
+        ...     transform=transform
+        ... )
+        >>> image, label = dataset[0]
+    """
+
+    def __init__(
+        self,
+        data_dir: str,
+        split: str = "train",
+        transform: Optional[object] = None,
+        pre_center_crop: bool = True,
+    ):
+        """Initialize the ImageNet HF dataset."""
+        self.data_dir = Path(data_dir)
+        self.split = split
+        self.transform = transform
+        self.pre_center_crop = pre_center_crop
+
+        dataset_name = "imagenet-latents-images" if self.pre_center_crop else "imagenet-latents-images-raw"
+
+        # Determine the path to the arrow dataset
+        arrow_path = self.data_dir / dataset_name
+        if not arrow_path.exists():
+            raise FileNotFoundError(
+                f"Arrow dataset not found at {arrow_path}. "
+                f"Expected to find 'imagenet-latents-images' in {self.data_dir}"
+            )
+
+        # Load the appropriate split
+        split_str = "val" if split == "val" else ""
+        dataset_path = arrow_path / split_str if split_str else arrow_path
+
+        if not dataset_path.exists():
+            raise FileNotFoundError(
+                f"Split '{split}' not found at {dataset_path}"
+            )
+
+        # Load the dataset using HuggingFace datasets
+        self.dataset = load_from_disk(str(dataset_path))
+        if not self.pre_center_crop:
+            # Raw images w/o center-cropping are saved as raw bytes
+            self.dataset = self.dataset.cast_column("image", HFImage())
+
+        print(f"Loaded ImageNet {split} split: {len(self.dataset)} images")
+
+    def __len__(self) -> int:
+        """Return the number of samples in the dataset."""
+        return len(self.dataset)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
+        """
+        Get a sample from the dataset.
+
+        Args:
+            idx: Index of the sample to retrieve
+
+        Returns:
+            tuple: (image, label) where:
+                - image: Tensor of shape (C, H, W) if transform is applied,
+                        otherwise PIL Image
+                - label: Integer class label (0-999 for ImageNet)
+        """
+        # Get sample from arrow dataset
+        sample = self.dataset[idx]
+        image = sample["image"]  # PIL Image
+        label = sample["label"]  # int32
+
+        # Convert PIL image to RGB if needed
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        # Apply transforms if provided
+        if self.transform is not None:
+            image = self.transform(image)
+
+        return image, label
+
+    @property
+    def num_classes(self) -> int:
+        """Return the number of classes in ImageNet."""
+        return 1000
 
 
 class LatentDataset(torch.utils.data.Dataset):
@@ -237,13 +348,13 @@ def build_imagenet_dataset(
         #   - val/
         #     - image1.png
         #     ...
-        root = os.path.join(data_dir, 'train' if is_train else 'val')
+        # root = os.path.join(data_dir, 'train' if is_train else 'val')
         transform = utils.build_transform(image_size)
         if is_train:
-            dataset = datasets.ImageFolder(root=root, transform=transform)
+            dataset = ImageNetHFDataset(data_dir=data_dir, split="train", transform=transform)
         else:
-            assert file_path != None, "Validation set must be provided with label file"
-            dataset = ValDataset(root=root, label_file=file_path, transform=transform)
+            # assert file_path != None, "Validation set must be provided with label file"
+            dataset = ImageNetHFDataset(data_dir=data_dir, split="val", transform=transform)
 
     logging.info(dataset)
 
@@ -292,5 +403,6 @@ def build_imagenet_loader(
             seed_worker, offset_seed=offset_seed, global_seed=config.data.seed_pt),
         persistent_workers=True,
         timeout=1800.,
+        prefetch_factor=4,
     )
     return loader

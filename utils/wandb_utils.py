@@ -16,7 +16,8 @@ import wandb
 
 
 def is_main_process():
-    return jax.process_index() == 0
+    import os
+    return int(os.environ.get("JAX_PROCESS_INDEX", 0)) == 0
 
 
 def generate_run_id(exp_name):

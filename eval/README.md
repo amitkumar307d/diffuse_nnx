@@ -20,7 +20,7 @@ setups, so loaders, samplers, and detectors are sharded-aware.
 
 1. Ensure `eval/inception_v3_weights_fid.pickle` is present. If not, call
    `eval.utils.download(url)` to fetch it once, or mount it under
-   `~/diffuse_nnx/eval/`.
+   `~/jmt/eval/`.
 2. Prepare reference dataset statistics. Either point `config.data.stat_dir` to
    a pickled `{"fid": {"mu": ..., "sigma": ...}}` file, or let
    `calculate_real_stats` ingest your dataset and cache the stats manually.

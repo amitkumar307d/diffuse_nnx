@@ -2,22 +2,24 @@
 
 CONFIG="rae_imagenet"
 BATCH_SIZE=1024
-WORKDIR="RAE-XL"
-BUCKET="$GCS_BUCKET"
-
-: "${WANDB_API_KEY:?Set WANDB_API_KEY before launching the training job.}"
-: "${GCS_BUCKET:?Set GCS_BUCKET before launching the training job.}"
+WORKDIR="Nov-19-RAE-XL-512"
+BUCKET="$JMT_GCS_BUCKET"
 
 export TCMALLOC_LARGE_ALLOC_REPORT_THRESHOLD=8589934592
+export WANDB_ENTITY="nm3607"
 
-# only RAE eval is supported at the moment 
-WANDB_API_KEY="$WANDB_API_KEY" python main.py \
+source /mnt/disks/imagenet/ENTER/bin/activate
+conda activate will_env
+
+WANDB_API_KEY="3c57a0b61e31ecc5db2d791aa2dce4637d94cc7c" python main.py \
     --workdir=$WORKDIR \
-    --bucket=$BUCKET \
-    --config=configs/$CONFIG.py:imagenet_raw_256-XL_1 \
+    --bucket="willis-storage" \
+    --config=configs/$CONFIG.py:imagenet_raw_512-XL_1 \
     --config.data.batch_size=$BATCH_SIZE \
-    --config.standalone_eval=True \
-    --config.project_name='diffuse_nnx' \
+    --config.standalone_eval=False \
+    --config.project_name='jmt' \
     --config.eval.on_load=False \
-    --config.visualize.on=True \
-    --config.exp_name='RAE-XL' \
+    --config.visualize.on=False \
+    --config.interface.train_time_dist_type=logitnormal \
+    --config.exp_name='RAE-XL-512-1119'
+    # --config.pretrained_ckpt="gs://$BUCKET/jmt/pretrained_ckpts/nnx/DDTXL_256" \

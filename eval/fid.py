@@ -37,15 +37,14 @@ def calculate_stats_for_iterable(
     """Calculate the statistics for an iterable of images. This function is ddp-agnostic.
     
     Args:
-        - image_iter: Iterable / Array of images to calculate statistics for.
-        - detector: Function to extract features. **Note: detector is assumed to be pmap / pjit'd.**
-        - detector_params: Parameters for the detector. **Note: detector_params is assumed to be processed to match detector.**
-        - batch_size: Batch size for processing images.
-        - num_eval_images: Total number of images to evaluate
-        - verbose: Whether to print verbose output.
+    - image_iter: Iterable / Array of images to calculate statistics for.
+    - detector: Function to extract features. **Note: detector is assumed to be pmap / pjit'd.**
+    - detector_params: Parameters for the detector. **Note: detector_params is assumed to be processed to match detector.**
+    - batch_size: Batch size for processing images.
+    - num_eval_images: Total number of images to evaluate
 
     Returns:
-        - dict[str, np.ndarray]: stats, Inception statistics for the images.
+    - stats: Inception statistics for the images.
     """
     batch_size = batch_size * jax.local_device_count()
     if isinstance(image_iter, np.ndarray) or isinstance(image_iter, jnp.ndarray):
@@ -103,14 +102,13 @@ def calculate_real_stats(
     """Calculate the statistics for real images.
     
     Args:
-        - config: Overall config for experiment.
-        - dataset: Image Dataset to calculate statistics for.
-        - detector: Function to extract features. **Note: detector is assumed to be pmap / pjit'd.**
-        - detector_params: Parameters for the detector. **Note: detector_params is assumed to be processed to match detector.**
-        - verbose: Whether to print verbose output.
+    - config: Overall config for experiment.
+    - dataset: Image Dataset to calculate statistics for.
+    - detector: Function to extract features. **Note: detector is assumed to be pmap / pjit'd.**
+    - detector_params: Parameters for the detector. **Note: detector_params is assumed to be processed to match detector.**
 
     Returns:
-        - dict[str, np.ndarray]: stats, Inception statistics for the images.
+    - stats: Inception statistics for the images.
     """
     
     if config.data.get('stat_dir'):
@@ -154,25 +152,24 @@ def calculate_cls_fake_stats(
     """Extract and calculate the statistics for class-conditioned synthesized images.
     
     Args:
-        - config: Overall config for experiment.
-        - rng: nnx Rngs stream for random number generation.
+    - config: Overall config for experiment.
+    - rng: nnx Rngs stream for random number generation.
 
-        - generator: Generator.
+    - generator: Generator.
+    - generator_params: Parameters for the generator.
 
-        - encoder: Encoder.
+    - encoder: Encoder.
 
-        - detector: Function to extract features. **Note: detector is assumed to be pmap / pjit'd.**
-        - detector_params: Parameters for the detector. **Note: detector_params is assumed to be processed to match detector.**
+    - detector: Function to extract features. **Note: detector is assumed to be pmap / pjit'd.**
+    - detector_params: Parameters for the detector. **Note: detector_params is assumed to be processed to match detector.**
 
-        - guide_generator: Guiding generator.
-        - guidance_scale: scale for generation guidance.
-        - all_eval_sample_nums: a list of number of total samples to generate.
-
-        - save_samples_path: Path to save the samples.
-        - mesh: Mesh for distributed sampling.
+    - guide_generator: Guiding generator.
+    - guide_generator_params: Parameters for the guiding generator.
+    - guidance_scale: scale for generation guidance.
+    - all_eval_sample_nums: a list of number of total samples to generate.
 
     Returns:
-        - dict[str, np.ndarray]: stats, Inception statistics for the images.
+    - stats: Inception statistics for the images.
     """
 
     batch_size = config.eval.batch_size * jax.local_device_count()
@@ -182,15 +179,19 @@ def calculate_cls_fake_stats(
     if guide_generator is None:
         guide_generator = generator
 
-    # @nnx.split_rngs(splits=jax.local_device_count())
-    # @nnx.pmap(in_axes=(None, None, None, 0), out_axes=0, axis_name='data')
-    @nnx.jit
-    def sample_step(generator, guide_generator, x, c, rngs):
-        samples = sampler.sample(
-            rngs, generator, x, y=c,
-            g_net=guide_generator, guidance_scale=guidance_scale
+    @functools.partial(
+        jax.jit,
+        static_argnums=(5, 6, 7),
+    )
+    def sample_step(gen_state, g_gen_state, rngs_state, x, c,
+                    gen_graph, g_gen_graph, rngs_graph):
+        gen = nnx.merge(gen_graph, gen_state)
+        g_gen = nnx.merge(g_gen_graph, g_gen_state)
+        rng = nnx.merge(rngs_graph, rngs_state)
+        return sampler.sample(
+            rng, gen, x, y=c,
+            g_net=g_gen, guidance_scale=guidance_scale
         )
-        return samples
 
     max_eval_samples = max(all_eval_sample_nums)
     eval_iters = math.ceil(
@@ -202,13 +203,11 @@ def calculate_cls_fake_stats(
     def sync_state(state: nnx.State):
         return state
     p_sync_state = jax.jit(sync_state, out_shardings=repl_sharding)
-    generator_graph, generator_state = nnx.split(generator)
-    generator_state = p_sync_state(generator_state)
-    generator = nnx.merge(generator_graph, generator_state)
+    gen_graph, gen_state = nnx.split(generator)
+    gen_state = p_sync_state(gen_state)
 
-    guide_generator_graph, guide_generator_state = nnx.split(guide_generator)
-    guide_generator_state = p_sync_state(guide_generator_state)
-    guide_generator = nnx.merge(guide_generator_graph, guide_generator_state)
+    g_gen_graph, g_gen_state = nnx.split(guide_generator)
+    g_gen_state = p_sync_state(g_gen_state)
 
     total_num_samples = 0
     per_process_samples = []
@@ -222,7 +221,11 @@ def calculate_cls_fake_stats(
         )
         x = sharding_utils.make_fsarray_from_local_slice(x, mesh.devices.flatten())
         c = sharding_utils.make_fsarray_from_local_slice(c, mesh.devices.flatten())
-        samples = sample_step(generator, guide_generator, x, c, rngs)
+        rngs_graph, rngs_state = nnx.split(rngs)
+        samples = sample_step(
+            gen_state, g_gen_state, rngs_state, x, c,
+            gen_graph, g_gen_graph, rngs_graph,
+        )
         # ensure no additional batch axis present
         assert samples.ndim == 4, 'Samples should have shape (N, H, W, C)'
 

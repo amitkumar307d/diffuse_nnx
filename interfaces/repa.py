@@ -1,3 +1,5 @@
+"""File containing the REPA wrapper for DiT."""
+
 # built-in libs
 
 # external libs
@@ -12,18 +14,6 @@ import numpy as np
 from networks.transformers import dit_nnx
 
 def build_mlp(hidden_size, projector_dim, feature_dim, rngs, dtype=jnp.float32):
-    """Build a multi-layer perceptron for feature projection.
-    
-    Args:
-        hidden_size: input hidden size.
-        projector_dim: projector dimension.
-        feature_dim: output feature dimension.
-        rngs: random number generators.
-        dtype: data type.
-        
-    Returns:
-        nnx.Sequential: mlp, multi-layer perceptron for feature projection.
-    """
     return nnx.Sequential(
         nnx.Linear(
             hidden_size, projector_dim, 
@@ -43,10 +33,6 @@ def build_mlp(hidden_size, projector_dim, feature_dim, rngs, dtype=jnp.float32):
 
 
 class DiT_REPA(nnx.Module):
-    """DiT with REPA (Representation Alignment) wrapper.
-    
-    This class wraps a diffusion interface with REPA functionality for representation alignment.
-    """
     
     def __init__(
         self,
@@ -58,16 +44,6 @@ class DiT_REPA(nnx.Module):
         proj_dim: int,
         dtype: jnp.dtype = jnp.float32,
     ):
-        """Initialize DiT_REPA.
-        
-        Args:
-            interface: diffusion interface to wrap.
-            feature_dim: feature dimension for alignment.
-            repa_loss_weight: weight for REPA loss.
-            repa_depth: depth for REPA feature extraction.
-            proj_dim: projection dimension.
-            dtype: data type.
-        """
         self.interface = interface
         self.repa_depth = repa_depth
         self.repa_loss_weight = repa_loss_weight
@@ -79,18 +55,7 @@ class DiT_REPA(nnx.Module):
 
         self.interface.network.return_intermediate_features = True
     
-    def loss(self, x: jnp.ndarray, x_feature: jnp.ndarray, *args, **kwargs) -> tuple[jnp.ndarray, jnp.ndarray]:
-        """Calculate combined diffusion and REPA loss.
-        
-        Args:
-            x: input clean sample.
-            x_feature: target features for alignment.
-            *args: additional arguments for interface.
-            **kwargs: additional keyword arguments for interface.
-            
-        Returns:
-            tuple[jnp.ndarray, jnp.ndarray]: (diffusion_loss, repa_loss), diffusion and REPA losses.
-        """
+    def loss(self, x: jnp.ndarray, x_feature: jnp.ndarray, *args, **kwargs) -> jnp.ndarray:
         diffusion_loss, _, intermediate_features = self.interface(x, *args, return_aux=True, **kwargs)
 
         repa_feature = intermediate_features[self.repa_depth - 1]
@@ -106,42 +71,13 @@ class DiT_REPA(nnx.Module):
 
         return diffusion_loss, repa_loss
 
-    def pred(self, *args, **kwargs) -> jnp.ndarray:
-        """Predict ODE tangent.
-        
-        Args:
-            *args: arguments passed to interface.
-            **kwargs: keyword arguments passed to interface.
-            
-        Returns:
-            jnp.ndarray: tangent, predicted ODE tangent from interface.
-        """
+    def pred(self, *args, **kwargs):
         return self.interface.pred(*args, **kwargs)
     
-    def score(self, *args, **kwargs) -> jnp.ndarray:
-        """Calculate score function.
-        
-        Args:
-            *args: arguments passed to interface.
-            **kwargs: keyword arguments passed to interface.
-            
-        Returns:
-            jnp.ndarray: score, score function from interface.
-        """
+    def score(self, *args, **kwargs):
         return self.interface.score(*args, **kwargs)
 
-    def __call__(self, x: jnp.ndarray, x_feature: jnp.ndarray, *args, **kwargs) -> dict[str, jnp.ndarray]:
-        """Forward pass with combined diffusion and REPA loss.
-        
-        Args:
-            x: input clean sample.
-            x_feature: target features for alignment.
-            *args: additional arguments for interface.
-            **kwargs: additional keyword arguments for interface.
-            
-        Returns:
-            dict[str, jnp.ndarray]: losses, dictionary containing total, diffusion, and REPA losses.
-        """
+    def __call__(self, x: jnp.ndarray, x_feature: jnp.ndarray, *args, **kwargs) -> jnp.ndarray:
         diffusion_loss, repa_loss = self.loss(x, x_feature, *args, **kwargs)
 
         return {

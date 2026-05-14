@@ -288,25 +288,7 @@ def update_model_sharding(
     mesh: Mesh,
     sharding_strategy: list[tuple[str, str]],
 ):
-    """Updates the model sharding for optimizer and EMA state.
-    
-    Args:
-        graphdef: The graph definition of the optimizer.
-        loaded_state: The loaded state of the optimizer.
-        loaded_rng_state: The loaded rng state of the optimizer.
-        ema: The EMA object.
-        loaded_ema_state: The loaded state of the EMA.
-        mesh: The mesh.
-        sharding_strategy: The sharding strategy.
-
-    Returns:
-        graphdef: The graph definition of the optimizer.
-        state: The resharded state of the optimizer.
-        ema_graphdef: The graph definition of the EMA.
-        ema_state: The resharded state of the EMA.
-        state_sharding: The sharding of the optimizer.
-        ema_state_sharding: The sharding of the EMA.
-    """
+    """Updates the model sharding for optimizer and EMA state"""
     loaded_state = jax.device_get(loaded_state)  # <-- required, otherwise orbax will load as SingleDeviceArray
     loaded_rng_state = jax.device_get(loaded_rng_state)
     loaded_ema_state = jax.device_get(loaded_ema_state.ema)

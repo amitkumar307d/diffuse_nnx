@@ -2,7 +2,7 @@
 
 # built-in libs
 import os
-from pathlib import Path
+import warnings
 
 # external libs
 from absl import app, flags, logging
@@ -16,8 +16,8 @@ from utils import logging_utils, gcloud_utils
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('workdir', None, 'Directory to store model data.')
-flags.DEFINE_string('bucket', None, 'Google Cloud Storage bucket. Leave unset for local runs.')
-flags.DEFINE_string('prefix', 'diffuse_nnx', 'Prefix for the experiment directory.')
+flags.DEFINE_string('bucket', None, 'Google Cloud Storage bucket.')
+flags.DEFINE_string('prefix', 'jmt', 'Prefix for the experiment directory.')
 
 config_flags.DEFINE_config_file(
     'config',
@@ -31,13 +31,6 @@ def create_experiment_dir(bucket, prefix, workdir):
     num_files = gcloud_utils.count_directories(bucket, prefix)
     workdir = f"gs://{bucket}/{prefix}/{num_files:03d}_{workdir}"
     return workdir
-
-
-def prepare_local_workdir(workdir):
-    """Expand and create a local experiment directory."""
-    path = Path(workdir).expanduser().resolve()
-    path.mkdir(parents=True, exist_ok=True)
-    return str(path)
 
 
 def get_trainers(trainer):
@@ -56,32 +49,45 @@ def main(argv):
     prefix = FLAGS.prefix
     workdir = FLAGS.workdir
 
-    if bucket:
+    if jax.process_count() > 1:
+        import jax._src.distributed as jax_distributed
+        if int(os.environ.get("JAX_PROCESS_INDEX", 0)) == 0:
+            logging.info('Current commit: ')
+            os.system('git show -s --format=%h')
+            logging.info('Current dir: ')
+            os.system('pwd')
+            
+            if gcloud_utils.directory_exists(bucket, prefix, workdir):
+                index = gcloud_utils.get_directory_index(bucket, prefix, workdir)
+                workdir = f"gs://{bucket}/{prefix}/{index:03d}_{workdir}"
+            else:
+                workdir = create_experiment_dir(bucket, prefix, workdir)
+            jax_distributed.global_state.client.key_value_set("gcs_workdir", workdir)
+        else:
+            workdir = jax_distributed.global_state.client.blocking_key_value_get("gcs_workdir", 300000)
+    else:
+        if int(os.environ.get("JAX_PROCESS_INDEX", 0)) == 0:
+            logging.info('Current commit: ')
+            os.system('git show -s --format=%h')
+            logging.info('Current dir: ')
+            os.system('pwd')
         if gcloud_utils.directory_exists(bucket, prefix, workdir):
             index = gcloud_utils.get_directory_index(bucket, prefix, workdir)
             workdir = f"gs://{bucket}/{prefix}/{index:03d}_{workdir}"
         else:
-            workdir = create_experiment_dir(bucket, prefix, workdir)
-    else:
-        workdir = prepare_local_workdir(workdir)
-    
-    if jax.process_index() == 0:
-        logging.info('Current commit: ')
-        os.system('git show -s --format=%h')
-        logging.info('Current dir: ')
-        os.system('pwd')
+            workdir = create_experiment_dir(bucket, prefix, workdir)     
     
     if len(argv) > 1:
         raise app.UsageError('Too many command-line arguments.')
 
     logging.info('JAX process: %d / %d',
-                 jax.process_index(), jax.process_count())
+                 int(os.environ.get("JAX_PROCESS_INDEX", 0)), jax.process_count())
     logging.info('JAX local devices: %r', jax.local_devices())
 
     # Add a note so that we can tell which task is which JAX host.
     # (Depending on the platform task 0 is not guaranteed to be host 0)
     platform.work_unit().set_task_status(
-        f'process_index: {jax.process_index()}, '
+        f'process_index: {int(os.environ.get("JAX_PROCESS_INDEX", 0))}, '
         f'process_count: {jax.process_count()}'
     )
     platform.work_unit().create_artifact(
@@ -90,8 +96,8 @@ def main(argv):
 
     logging.info(FLAGS.config)
 
-    if jax.local_devices()[0].platform != 'tpu' and jax.local_devices()[0].platform != 'gpu':
-        logging.error('Not using TPU or GPU. Exit.')
+    if jax.local_devices()[0].platform != 'tpu':
+        logging.error('Not using TPU. Exit.')
         exit()
     
     logging.info("Start training with trainer: %s", FLAGS.config.trainer)
@@ -100,7 +106,15 @@ def main(argv):
 
 
 if __name__ == '__main__':
-    # jax.distributed.initialize()  # <-- required for orbax.checkpoint_manager (for some reason)
+    from absl import flags
+    import orbax.checkpoint
+    flags.FLAGS.experimental_orbax_use_distributed_process_id = True
+    import torch.multiprocessing as mp
+    mp.set_start_method("spawn", force=True)
+    import os
+    print(">>> Reached jax.distributed.initialize()", flush=True)
+    jax.distributed.initialize(coordinator_address=os.environ["JAX_COORDINATOR_ADDRESS"], num_processes=int(os.environ["JAX_PROCESS_COUNT"]), process_id=int(os.environ["JAX_PROCESS_INDEX"]))
+    print(">>> Passed jax.distributed.initialize()", flush=True)
 
     if not (jax.process_index() == 0):  # not first process
         logging.set_verbosity(logging.ERROR)  # disable info/warning

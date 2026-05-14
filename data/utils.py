@@ -78,7 +78,7 @@ def build_transform(image_size: int):
     return transform
 
 
-def parse_batch(batch, encoder, mesh, *, detector=None):
+def parse_batch(batch, encoder, mesh, *, key=None, detector=None):
     images, labels = batch
     images = images.permute([0, 2, 3, 1])  # nchw -> nhwc
     batch = {'images': images, 'labels': labels}
@@ -92,7 +92,8 @@ def parse_batch(batch, encoder, mesh, *, detector=None):
             x, mesh.devices.flatten()
         ), batch
     )
-    batch['latents'] = encoder.encode(batch['images'])
+    # REMOVED: batch['latents'] = encoder.encode(batch['images'], key=key)
+    # We will do this on TPU inside the training loop now!
     if detector is not None:
         # we have an extra detector to extract visual representation
         batch['features'] = detector.encode(batch['images'])

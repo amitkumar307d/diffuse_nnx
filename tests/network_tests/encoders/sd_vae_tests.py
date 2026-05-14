@@ -22,15 +22,16 @@ if __name__ == "__main__":
     config = dit_imagenet.get_config('imagenet_256-B_2')
     encoder = init_utils.instantiate_encoder(config)
 
-    nnx.display(encoder)
-
     home_dir = os.path.expanduser("~")
     data = np.load(
-        os.path.join(home_dir, 'diffuse_nnx/tests/networks/encoders/test_latent.npy')
+        os.path.join(home_dir, 'jmt/tests/network_tests/encoders/test_latent.npy')
     )
     data = np.moveaxis(data, 0, -1)
 
-    res = encoder.decode(encoder.encode(data[None, ...]))
+    key = jax.random.PRNGKey(0)
+    key, encode_key = jax.random.split(key)
+    # data = jax.random.normal(encode_key, (256, 256, 3))
+    res = encoder.decode(encoder.encode(data[None, ...], key=key, encoded_pixels=True))
 
     # print(res)
 

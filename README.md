@@ -2,7 +2,7 @@
 
 This repo is a comprehensive JAX/NNX library for diffusion and flow matching generative algorithms, featuring DiT (Diffusion Transformer) and its variants as the primary backbone with support for ImageNet training and various sampling strategies. The whole repo is built with JAX and the very recent Flax NNX (with friendly syntax close to PyTorch). The focus is to provide a lightweight and scalable codebase in JAX & NNX for powering research in generative modeling with diffusion. The repo is still work-in-progress, but decently clean and easy to use. Please fork and/or play with the code! Any feedback is more than welcome!
 
-![DiffuseNNX teaser](assets/teaser.png)
+TODO(Teaser)
 
 ## Overview
 
@@ -87,27 +87,26 @@ Contains unit tests for all modules implemented in this codebase, including netw
 For self-implemented tests, make sure you name the test file in the format of `*_tests.py`, so that the runner file can identify and add it to our test suite.
 
 #### 7. Others
-Please check `utils/` and `data/` for all other functionalities! In `docs/` we also provide a lightweight [tutorial](docs/utils/fsdp_in_jax_nnx.ipynb) (cr. [Goerygy](https://github.com/georgysavva)) for implementing & using FSDP with JAX & NNX. Hope you find it helpful!
+Please check `utils/` and `data/` for all other functionalities! In `docs/` we also provide a lightweight [tutorial](docs/fsdp_in_jax_nnx.ipynb) (cr. [Goerygy](https://github.com/georgysavva)) for implementing & using FSDP with JAX & NNX. Hope you find it helpful!
 
 ## Prerequisites
 
 - **Google Cloud Storage access**: Training and evaluation jobs stream checkpoints to a bucket via `--bucket`. Ensure you have access to [Google Cloud Storage Bucket](https://cloud.google.com/storage/docs/creating-buckets) before proceeding. Once that is established, run `gcloud auth application-default login` to generate the credential json file for the gcloud client api used by the codebase.
-- **Local Filesystem support**: Alternatively, you can omit the `--bucket` flag to use local filesystem for checkpoint storage. (Thanks @[Wenhao](https://github.com/rese1f) for the support!)
 - **Weights & Biases authentication**: The logging helpers require an API key. Visit https://wandb.ai/authorize to copy it, then export it as `WANDB_API_KEY`. `WANDB_ENTITY` is also required to set up the specific WANDB space you want to work in.
-- **Secrets & environment loading**: Keep cloud keys out of source control. Store them in an `.env` file and source it in every shell before launching commands.
+- **Secrets & environment loading**: Keep cloud keys out of source control. Store them in an `.env.jmt` file and source it in every shell before launching commands.
 
 ```bash
-# .env (do not commit)
+# .env.jmt (do not commit)
 export WANDB_API_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 export WANDB_ENTITY="my-team"
 export GOOGLE_APPLICATION_CREDENTIALS="$HOME/.config/gcloud/application_default_credentials.json"
-export GCS_BUCKET="my-gcs-bucket"
+export JMT_GCS_BUCKET="my-gcs-bucket"
 
 # load the variables
-source .env
+source .env.jmt
 
 # smoke test: ensure the env is wired up
-gcloud storage ls gs://$GCS_BUCKET
+gcloud storage ls gs://$JMT_GCS_BUCKET
 python - <<'PY'
 import os
 print("WANDB token loaded:", bool(os.getenv("WANDB_API_KEY")))
@@ -118,8 +117,6 @@ PY
 
 ## Installation
 
-This codebase requires `Python<=3.11` to run. We do require both PyTorch and Tensorflow, but only the CPU-only version and should incur minimal overhead.
-
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -127,16 +124,11 @@ cd diffuse_nnx
 
 # Install dependencies
 pip install -r requirements.txt
-
-# Install the codebase
-pip install -e .
 ```
 
-**Note**: The codebase is mainly designed for using on Google Cloud TPU machines and haven't been extensively tested on GPUs. To use it on GPU, replace the `jax[tpu]==0.5.1` dependency in `requirements.txt` with `jax[cuda12]==0.5.1`. We greatly appreciate it if you can help validate the performances on GPU!
+**Note**: The codebase is mainly designed for using on Google Cloud TPU machines and haven't been extensively tested on GPUs. To use it on GPU, replace the `jax[tpu]` dependency in `requirements.txt` with `jax[cuda12]`. We greatly appreciate it if you can help validate the performances on GPU!
 
 ## Quick Start
-
-Before training, you need to update the `_*_data_presets` entries to where you stored the ImageNet data and corresponding FID statsitics. For a quick and easy guide on extracting the latent dataset & calculating the FID statistics, see [EDM2](https://github.com/NVlabs/edm2).
 
 ### Training a DiT Model on ImageNet
 
@@ -144,7 +136,7 @@ Before training, you need to update the `_*_data_presets` entries to where you s
 # Basic training command
 python main.py \
     --config=configs/dit_imagenet.py \
-    --bucket=$GCS_BUCKET \
+    --bucket=$JMT_GCS_BUCKET \
     --workdir=experiment_name
 ```
 
@@ -180,11 +172,9 @@ python tests/<path-to-test-file>.py
 | LightningDiT-XL/2 |  256   |  Heun-32  |   7.49 |  -   |
 | MF-B/2 (guided)   |  256  |   Euler-1 |    10.24 | 6.61 | 
 | MF-XL/2 (guided)  |  256  |  Euler-1  |  5.06   |  3.78 | 
-| RAE      |  256   |  Euler-50  |    -         |   **1.65**** |
+| RAE      |  256   |  Euler-50  |    -         |   1.65 |
 
 *We are actively investigating this performance misalignment.
-
-**Only inference code is available for RAE now (`config.standalone_eval=True` is required); we are actively working on the training pipeline.
 
 ### NNX vs JAX Native Module Performance
 
@@ -235,12 +225,11 @@ This project is licensed under the terms specified in the LICENSE file.
 If you use this library in your research, please cite:
 
 ```bibtex
-@misc{DiffuseNNX,
-  author={Nanye Ma},
+@software{DiffuseNNX,
   title={DiffuseNNX: A JAX/NNX Library for Diffusion and Flow Matching},
+  author={Nanye Ma},
   year={2025},
-  publisher={Github},
-  url={https://github.com/willisma/diffuse_nnx.git}
+  url={https://github.com/willisma/jmt.git}
 }
 ```
 
@@ -289,10 +278,6 @@ If you use this library in your research, please cite:
 - [x] Wandb logging & visualization support
 - [x] Orbax-based distributed checkpointing
 - [ ] Tensor parallelism & context parallelism implementation
-
-### `tests`
-- [x] Basic unit tests
-- [ ] Add Github CI / Coverage support
 
 
 ### Future Work 📋
