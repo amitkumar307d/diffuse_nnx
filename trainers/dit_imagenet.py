@@ -360,11 +360,10 @@ def train_and_evaluate(
                 nnx.update(ema, ema_state)
                 nnx.update(optimizer, state)
                 _, saved_rng_state, saved_state = nnx.split(optimizer, nnx.RngKey, ...)
-                saved_state, saved_rng_state = jax.device_get(
-                    (p_sync_state(saved_state), p_sync_state(saved_rng_state))
-                )
+                saved_state = p_sync_state(saved_state)
+                saved_rng_state = p_sync_state(saved_rng_state)
                 _, _, saved_ema_state = nnx.split(ema, nnx.RngKey, ...)
-                saved_ema_state = jax.device_get(p_sync_state(saved_ema_state))
+                saved_ema_state = p_sync_state(saved_ema_state)
                 ckpt_utils.save_checkpoints(
                     workdir, step + 1, saved_state, saved_rng_state, saved_ema_state, mngr=ckpt_mngr
                 )

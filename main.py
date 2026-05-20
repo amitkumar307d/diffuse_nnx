@@ -1,5 +1,16 @@
 """File containing the main entry point for training & evaluation."""
 
+# import jax
+# def spy(*args, **kwargs):
+#     import traceback
+#     traceback.print_stack()
+#     return original_init(*args, **kwargs)
+
+# # Hook into the backend initialization
+# from jax._src import xla_bridge
+# original_init = xla_bridge.get_backend
+# xla_bridge.get_backend = spy
+
 # built-in libs
 import os
 import warnings
@@ -44,80 +55,64 @@ def get_trainers(trainer):
 
 def main(argv):
     """The main entry point."""
+    if len(argv) > 1:
+        raise app.UsageError('Too many command-line arguments.')
 
-    bucket = FLAGS.bucket
-    prefix = FLAGS.prefix
-    workdir = FLAGS.workdir
+    try:
+        # Disable info/warning logs on non-leader processes immediately
+        if jax.process_index() != 0:
+            logging.set_verbosity(logging.ERROR)
 
-    if jax.process_count() > 1:
-        import jax._src.distributed as jax_distributed
-        if int(os.environ.get("JAX_PROCESS_INDEX", 0)) == 0:
-            logging.info('Current commit: ')
-            os.system('git show -s --format=%h')
-            logging.info('Current dir: ')
-            os.system('pwd')
-            
-            if gcloud_utils.directory_exists(bucket, prefix, workdir):
-                index = gcloud_utils.get_directory_index(bucket, prefix, workdir)
-                workdir = f"gs://{bucket}/{prefix}/{index:03d}_{workdir}"
-            else:
-                workdir = create_experiment_dir(bucket, prefix, workdir)
-            jax_distributed.global_state.client.key_value_set("gcs_workdir", workdir)
-        else:
-            workdir = jax_distributed.global_state.client.blocking_key_value_get("gcs_workdir", 300000)
-    else:
-        if int(os.environ.get("JAX_PROCESS_INDEX", 0)) == 0:
-            logging.info('Current commit: ')
-            os.system('git show -s --format=%h')
-            logging.info('Current dir: ')
-            os.system('pwd')
+        logging.info('JAX process: %d / %d',
+                     jax.process_index(), jax.process_count())
+        logging.info('JAX local devices: %r', jax.local_devices())
+
+        bucket = FLAGS.bucket
+        prefix = FLAGS.prefix
+        workdir = FLAGS.workdir
+
         if gcloud_utils.directory_exists(bucket, prefix, workdir):
             index = gcloud_utils.get_directory_index(bucket, prefix, workdir)
             workdir = f"gs://{bucket}/{prefix}/{index:03d}_{workdir}"
         else:
-            workdir = create_experiment_dir(bucket, prefix, workdir)     
-    
-    if len(argv) > 1:
-        raise app.UsageError('Too many command-line arguments.')
+            workdir = create_experiment_dir(bucket, prefix, workdir)
+        
+        if jax.process_index() == 0:
+            logging.info('Current commit: ')
+            os.system('git show -s --format=%h')
+            logging.info('Current dir: ')
+            os.system('pwd')
+        
+        platform.work_unit().set_task_status(
+            f'process_index: {jax.process_index()}, '
+            f'process_count: {jax.process_count()}'
+        )
+        platform.work_unit().create_artifact(
+            platform.ArtifactType.DIRECTORY, workdir, 'workdir'
+        )
 
-    logging.info('JAX process: %d / %d',
-                 int(os.environ.get("JAX_PROCESS_INDEX", 0)), jax.process_count())
-    logging.info('JAX local devices: %r', jax.local_devices())
+        logging.info(FLAGS.config)
 
-    # Add a note so that we can tell which task is which JAX host.
-    # (Depending on the platform task 0 is not guaranteed to be host 0)
-    platform.work_unit().set_task_status(
-        f'process_index: {int(os.environ.get("JAX_PROCESS_INDEX", 0))}, '
-        f'process_count: {jax.process_count()}'
-    )
-    platform.work_unit().create_artifact(
-        platform.ArtifactType.DIRECTORY, workdir, 'workdir'
-    )
+        if jax.local_devices()[0].platform != 'tpu':
+            logging.error('Not using TPU. Exit.')
+            return  
+        
+        logging.info("Start training with trainer: %s", FLAGS.config.trainer)
+        trainer = get_trainers(FLAGS.config.trainer)
+        trainer.train_and_evaluate(FLAGS.config, workdir)
 
-    logging.info(FLAGS.config)
-
-    if jax.local_devices()[0].platform != 'tpu':
-        logging.error('Not using TPU. Exit.')
-        exit()
-    
-    logging.info("Start training with trainer: %s", FLAGS.config.trainer)
-    trainer = get_trainers(FLAGS.config.trainer)
-    trainer.train_and_evaluate(FLAGS.config, workdir)
+    finally:
+        # Keep shutdown inside the finally block to release the ports on exit
+        jax.distributed.shutdown()
 
 
 if __name__ == '__main__':
-    from absl import flags
-    import orbax.checkpoint
-    flags.FLAGS.experimental_orbax_use_distributed_process_id = True
-    import torch.multiprocessing as mp
-    mp.set_start_method("spawn", force=True)
-    import os
-    print(">>> Reached jax.distributed.initialize()", flush=True)
-    jax.distributed.initialize(coordinator_address=os.environ["JAX_COORDINATOR_ADDRESS"], num_processes=int(os.environ["JAX_PROCESS_COUNT"]), process_id=int(os.environ["JAX_PROCESS_INDEX"]))
-    print(">>> Passed jax.distributed.initialize()", flush=True)
-
-    if not (jax.process_index() == 0):  # not first process
-        logging.set_verbosity(logging.ERROR)  # disable info/warning
+    # 1. CRITICAL: Initialize distributed runtime BEFORE flag parsing touches configs
+    jax.distributed.initialize()
+    
+    # 2. Configure logging utilities safely post-initialization
     logging_utils.set_time_logging(logging)
+    
+    # 3. Parse flags and run the main app logic
     flags.mark_flags_as_required(['config', 'workdir'])
     app.run(main)

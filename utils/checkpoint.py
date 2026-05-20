@@ -56,6 +56,15 @@ def save_checkpoints(
     - ema_state: ema state.
     """
     
+    def to_global_array(x):
+        if isinstance(x, jax.Array) and 'SingleDeviceSharding' in type(x.sharding).__name__:
+            return ocp.utils.fully_replicated_host_local_array_to_global_array(x)
+        return x
+
+    optimizer_state = jax.tree.map(to_global_array, optimizer_state)
+    ema_state = jax.tree.map(to_global_array, ema_state)
+    rng_state = jax.tree.map(to_global_array, rng_state)
+
     if mngr is None:
         # persistent manager not supplied; use async checkpointer instead.
         logging.warning('Checkpoint Manager not supplied; using default Checkpointer instead.')
