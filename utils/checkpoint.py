@@ -83,6 +83,7 @@ def save_checkpoints(
         # persistent manager supplied; use it to manage saving logics
         mngr.save(
             step,
+            force=True,  # Allow manual training loop logic to dictate saving intervals and force final step saves
             args=ocp.args.Composite(
                 state=ocp.args.StandardSave(optimizer_state),
                 ema_state=ocp.args.StandardSave(ema_state),
