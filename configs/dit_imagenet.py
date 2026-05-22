@@ -27,6 +27,7 @@ def get_config(options='imagenet_64-B_2'):
     config.standalone_eval     = False
 
     config.total_steps           = 7_000_000
+    config.epochs                = 0  # Default to 0 (means use total_steps)
     config.log_every_steps       = 100
     config.save_every_steps      = 50_000
     config.visualize_every_steps = 25_000
@@ -151,5 +152,10 @@ def get_config(options='imagenet_64-B_2'):
         config.sharding.strategy = [('.*', 'replicate')]
     config.sharding.rules                     = [('act_batch', 'data')]
     config.sharding.allow_split_physical_axes = False
+
+    # Dynamically compute total_steps from epochs if specified (greater than 0)
+    if config.get('epochs', 0) > 0:
+        steps_per_epoch = config.data.num_train_samples / config.data.batch_size
+        config.total_steps = int(steps_per_epoch * config.epochs)
 
     return config

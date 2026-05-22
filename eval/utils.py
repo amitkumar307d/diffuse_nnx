@@ -5,6 +5,7 @@ import math
 import os
 import requests
 import tempfile
+import functools
 
 # external libs
 from absl import logging
@@ -127,35 +128,31 @@ def build_eval_loader(
     return loader, keep_indices
 
 
-def get_detector(config: ml_collections.ConfigDict):
+def get_detector(config: ml_collections.ConfigDict, mesh: jax.sharding.Mesh):
     """Get the sampler for fid evaluation."""
     if config.eval.detector == 'inception':
         logging.info('Loading InceptionV3 model for FID calculation...')
         detector = inception.InceptionV3(pretrained=True)
 
-        def inception_forward(
-            renormalize_data: bool = False,
-            run_all_gather: bool = True
-        ):
-            """Forward pass of the inception model to extract features."""
-            params = detector.init(jax.random.PRNGKey(0), jnp.ones((1, 299, 299, 3)))
-            params = flax.jax_utils.replicate(params)
+        params = detector.init(jax.random.PRNGKey(0), jnp.ones((1, 299, 299, 3)))
+        
+        # Fully replicate parameters across the global mesh
+        repl_sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec())
+        params = jax.device_put(params, repl_sharding)
 
-            def forward(params, x):
-                if renormalize_data:
-                    x = x.astype(jnp.float32) / 127.5 - 1
-                
-                # TODO: ablate following resize choices
-                x = jax.image.resize(x, (x.shape[0], 299, 299, x.shape[-1]), method='bilinear')
-                features = detector.apply(params, x, train=False).squeeze(axis=(1, 2))
-                if run_all_gather:
-                    features = jax.lax.all_gather(features, axis_name='data', tiled=True)
-                
-                return features
+        data_sharding = jax.sharding.NamedSharding(mesh, jax.sharding.PartitionSpec('data'))
 
-            return params, jax.pmap(forward, axis_name='data')
+        @functools.partial(
+            jax.jit,
+            in_shardings=(repl_sharding, data_sharding),
+            out_shardings=data_sharding,
+        )
+        def forward(params, x):
+            x = x.astype(jnp.float32) / 127.5 - 1
+            x = jax.image.resize(x, (x.shape[0], 299, 299, x.shape[-1]), method='bilinear')
+            features = detector.apply(params, x, train=False).squeeze(axis=(1, 2))
+            return features
 
-        params, forward = inception_forward(renormalize_data=True, run_all_gather=True)
         logging.info('InceptionV3 model loaded.')
         return params, forward
     else:

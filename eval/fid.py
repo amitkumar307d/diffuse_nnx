@@ -33,33 +33,39 @@ def calculate_stats_for_iterable(
     batch_size: int = 64,
     num_eval_images: int | None = None,
     verbose: bool = False,
+    mesh: jax.sharding.Mesh | None = None,
 ) -> dict[str, np.ndarray]:
-    """Calculate the statistics for an iterable of images. This function is ddp-agnostic.
-    
+    """Calculate the statistics (mean and covariance) for an iterable/loader of images.
+
+    Leverages modern JAX global device sharding to distribute the image batch over
+    the data axis of the device mesh, and utilizes host process all-gathers to 
+    accurately compute and aggregate overall metrics globally across all processes.
+
     Args:
-    - image_iter: Iterable / Array of images to calculate statistics for.
-    - detector: Function to extract features. **Note: detector is assumed to be pmap / pjit'd.**
-    - detector_params: Parameters for the detector. **Note: detector_params is assumed to be processed to match detector.**
-    - batch_size: Batch size for processing images.
-    - num_eval_images: Total number of images to evaluate
+        image_iter: An iterable (e.g. PyTorch DataLoader) or a raw NumPy/JAX Array of images.
+        detector: JIT-compiled InceptionV3 model forward function.
+        detector_params: Replicated parameters for the InceptionV3 detector.
+        batch_size: Local batch size per host VM.
+        num_eval_images: Optional maximum number of images to evaluate.
+        verbose: If True, displays a progress bar.
+        mesh: Global JAX device mesh for multi-host shard routing.
 
     Returns:
-    - stats: Inception statistics for the images.
+        A dictionary containing 'mu' (mean) and 'sigma' (covariance) of features.
     """
-    batch_size = batch_size * jax.local_device_count()
+    local_batch_size = batch_size
+    global_batch_size = batch_size * jax.process_count()
+    
     if isinstance(image_iter, np.ndarray) or isinstance(image_iter, jnp.ndarray):
         assert len(image_iter.shape) == 4, 'Image array should have shape (N, H, W, C)'
-        assert image_iter.shape[0] % batch_size == 0, 'Number of images should be divisible by batch size'
-        image_iter = image_iter.reshape(-1, batch_size, *image_iter.shape[1:])
+        image_iter = image_iter.reshape(-1, global_batch_size, *image_iter.shape[1:])
         process_fn = lambda x: x
     else:
-        # we assume in this case image_iter is a torch dataloader
         process_fn = lambda x: x[0].permute([0, 2, 3, 1]).numpy()
 
-    
     total_num_images = 0
 
-    # TODO: remove the hardcoding here
+     # TODO: remove the hardcoding here
     running_mu = np.zeros(2048, dtype=np.float64)
     running_cov = np.zeros((2048, 2048), dtype=np.float64)
 
@@ -67,25 +73,28 @@ def calculate_stats_for_iterable(
         tqdm(image_iter, desc='Calculating statistics', disable=not verbose)
     ):
         batch = process_fn(batch)
-        batch = batch.reshape(jax.local_device_count(), -1, *batch.shape[1:])
-        batch_features = detector(detector_params, batch)[0]
+        batch = sharding_utils.make_fsarray_from_local_slice(batch, mesh.devices.flatten())
+        
+        batch_features = detector(detector_params, batch)
         total_num_images += batch_features.shape[0]
 
-        # TODO: check if this is necessary
-        utils.lock()
-
-        batch_features = np.asarray(jax.device_get(batch_features), dtype=np.float64)
+        batch_features = sharding_utils.get_local_slice_from_fsarray(batch_features)
+        batch_features = np.asarray(batch_features, dtype=np.float64)
 
         if num_eval_images is not None and total_num_images > num_eval_images:
             batch_features = batch_features[:(num_eval_images - total_num_images)]
 
-        running_mu = running_mu + np.sum(batch_features, axis=0)
-        running_cov = running_cov + np.matmul(batch_features.T, batch_features)
+        running_mu += np.sum(batch_features, axis=0)
+        running_cov += np.matmul(batch_features.T, batch_features)
 
         if num_eval_images is not None and total_num_images >= num_eval_images:
             total_num_images = num_eval_images
             break
-    print(f"Total number of images: {total_num_images}")
+            
+    # Globally aggregate across all hosts
+    running_mu = np.sum(jax.experimental.multihost_utils.process_allgather(running_mu), axis=0)
+    running_cov = np.sum(jax.experimental.multihost_utils.process_allgather(running_cov), axis=0)
+    
     mu = running_mu / total_num_images
     cov = (running_cov - np.outer(mu, mu) * total_num_images) / (total_num_images - 1)
     
@@ -98,17 +107,23 @@ def calculate_real_stats(
     detector: Callable[[dict, jnp.ndarray], jnp.ndarray],
     detector_params: dict,
     verbose: bool = False,
+    mesh: jax.sharding.Mesh | None = None,
 ) -> dict[str, np.ndarray]:
-    """Calculate the statistics for real images.
+    """Calculate the statistics for real images using modern JIT.
     
+    If config.data.stat_dir is provided, loads pre-computed statistics directly from disk/GCS.
+    Otherwise, streams the real dataset via a distributed loader and extracts the stats.
+
     Args:
-    - config: Overall config for experiment.
-    - dataset: Image Dataset to calculate statistics for.
-    - detector: Function to extract features. **Note: detector is assumed to be pmap / pjit'd.**
-    - detector_params: Parameters for the detector. **Note: detector_params is assumed to be processed to match detector.**
+        config: Configuration dict containing directory and evaluation settings.
+        dataset: PyTorch Dataset containing the real ImageNet images.
+        detector: JIT-compiled InceptionV3 model forward function.
+        detector_params: Replicated parameters for the InceptionV3 detector.
+        verbose: If True, shows a progress bar.
+        mesh: Global JAX device mesh for multi-host shard routing.
 
     Returns:
-    - stats: Inception statistics for the images.
+        A dictionary containing the mu (mean) and sigma (covariance) feature statistics.
     """
     
     if config.data.get('stat_dir'):
@@ -122,7 +137,7 @@ def calculate_real_stats(
     loader, _ = utils.build_eval_loader(
         dataset, config.eval.inception_batch_size * jax.local_device_count(), config.data.num_workers
     )
-    return calculate_stats_for_iterable(loader, detector, detector_params, verbose=verbose)
+    return calculate_stats_for_iterable(loader, detector, detector_params, verbose=verbose, mesh=mesh)
 
 
 def calculate_cls_fake_stats(
@@ -242,7 +257,7 @@ def calculate_cls_fake_stats(
     all_stats = {}
     for num_eval_sampels in all_eval_sample_nums:
         all_stats[num_eval_sampels] = calculate_stats_for_iterable(
-            per_process_samples, detector, detector_params, config.eval.inception_batch_size, num_eval_sampels
+            per_process_samples, detector, detector_params, config.eval.inception_batch_size, num_eval_sampels, mesh=mesh
         )
     
     if save_samples_path is not None:
@@ -284,9 +299,9 @@ def calculate_fid(
     # fix rngs for each evaluation
     rngs = nnx.Rngs(config.eval.seed + jax.process_index())
 
-    detector_params, detector = utils.get_detector(config)
+    detector_params, detector = utils.get_detector(config, mesh)
 
-    real_stats = calculate_real_stats(config, dataset, detector, detector_params)
+    real_stats = calculate_real_stats(config, dataset, detector, detector_params, mesh=mesh)
     fake_stats = calculate_cls_fake_stats(
         config, rngs, sampler, generator, encoder, detector, detector_params,
         guide_generator, guidance_scale, sample_sizes, config.eval.save_samples_path, mesh=mesh
