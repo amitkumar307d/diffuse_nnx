@@ -142,8 +142,13 @@ def get_config(options='imagenet_64-B_2'):
     config.sharding = ml_collections.ConfigDict()
     config.sharding.mesh                      = [('data', -1)]
     config.sharding.data_axis                 = 'data'
-    # config.sharding.strategy                  = [('.*', 'fsdp(axis="data")')]
-    config.sharding.strategy                  = [('.*', 'replicate')]
+    config.sharding.strategy_type             = 'replicate'  # Default to replicate. Can override with fsdp.
+    
+    # Dynamically resolve sharding strategy list based on strategy_type
+    if config.sharding.get('strategy_type') == 'fsdp':
+        config.sharding.strategy = [('.*', 'fsdp(axis="data")')]
+    else:
+        config.sharding.strategy = [('.*', 'replicate')]
     config.sharding.rules                     = [('act_batch', 'data')]
     config.sharding.allow_split_physical_axes = False
 
