@@ -75,6 +75,7 @@ def get_config(options='imagenet_64-B_2'):
 
     config.network.mlp_dropout  = 0.0
     config.network.attn_dropout = 0.0
+    config.network.norm_eps     = 1e-6  # Default LayerNorm epsilon
 
     # Interface
     config.interface = ml_collections.ConfigDict()
@@ -145,18 +146,7 @@ def get_config(options='imagenet_64-B_2'):
     config.sharding.mesh                      = [('data', -1)]
     config.sharding.data_axis                 = 'data'
     config.sharding.strategy_type             = 'replicate'  # Default to replicate. Can override with fsdp.
-    
-    # Dynamically resolve sharding strategy list based on strategy_type
-    if config.sharding.get('strategy_type') == 'fsdp':
-        config.sharding.strategy = [('.*', 'fsdp(axis="data")')]
-    else:
-        config.sharding.strategy = [('.*', 'replicate')]
     config.sharding.rules                     = [('act_batch', 'data')]
     config.sharding.allow_split_physical_axes = False
-
-    # Dynamically compute total_steps from epochs if specified (greater than 0)
-    if config.get('epochs', 0) > 0:
-        steps_per_epoch = config.data.num_train_samples / config.data.batch_size
-        config.total_steps = int(steps_per_epoch * config.epochs)
 
     return config

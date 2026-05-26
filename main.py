@@ -91,6 +91,12 @@ def main(argv):
             platform.ArtifactType.DIRECTORY, workdir, 'workdir'
         )
 
+        # Dynamically compute total_steps from epochs if specified (greater than 0)
+        if FLAGS.config.get('epochs', 0) > 0:
+            steps_per_epoch = FLAGS.config.data.num_train_samples / FLAGS.config.data.batch_size
+            FLAGS.config.total_steps = int(steps_per_epoch * FLAGS.config.epochs)
+            logging.info(f"Dynamically calculated total_steps from epochs: {FLAGS.config.total_steps} steps")
+
         logging.info(FLAGS.config)
 
         if jax.local_devices()[0].platform != 'tpu':

@@ -82,7 +82,7 @@ def create_learning_rate_fn(
 ):
     """Create learning rate schedule."""
     warmup_fn = optax.linear_schedule(
-        init_value=learning_rate, end_value=learning_rate,
+        init_value=0.0, end_value=learning_rate,
         transition_steps=config.warmup_steps
     )
     poly_warmup_fn = optax.polynomial_schedule(

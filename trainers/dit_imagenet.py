@@ -75,6 +75,7 @@ def train_step(
 
     # Run VAE encoding on TPU inside the compiled graph!
     latents = encoder.encode(images, key=key)
+    latents = latents * 0.18215
     labels = batch["labels"]
 
     def loss_fn(model):
@@ -97,17 +98,20 @@ def train_step(
     optimizer_fp32 = nnx.merge(graph, state)
     optimizer_fp32.update(grads)
 
-    grad_norm = jax.tree_util.tree_reduce(
+    grad_norm = jnp.sqrt(jax.tree_util.tree_reduce(
         lambda a, b: a + b, 
         jax.tree_util.tree_map(lambda g: jnp.sum(jnp.square(g)), grads), 
         initializer=0.0
-    )
+    ))
     
     # TODO: update this
-    if hasattr(model, 'interface'):
-        ema.update(model.interface)
+    # Use optimizer_fp32.model to update EMA with high-precision FP32 weights, 
+    # not the bf16 `model`!
+    if hasattr(optimizer_fp32.model, 'interface'):
+        ema.update(optimizer_fp32.model.interface)
     else:
-        ema.update(model)
+        ema.update(optimizer_fp32.model)
+
     metric_dict = {
         loss_type: loss.mean() for loss_type, loss in loss_dict.items()
     }
@@ -192,6 +196,13 @@ def train_and_evaluate(
     data_sharding = NamedSharding(mesh, P(config.sharding.data_axis,))
     repl_sharding = NamedSharding(mesh, P())
 
+    # Load sharding strategy from config (either string for simple or list for complex)
+    strategy_type = config.sharding.get('strategy_type', 'replicate')
+    if strategy_type == 'fsdp':
+        sharding_strategy = [('.*', 'fsdp(axis="data")')]
+    else:
+        sharding_strategy = [('.*', 'replicate')]
+    
     # update model sharding
     (
         graphdef,
@@ -202,7 +213,7 @@ def train_and_evaluate(
         ema_state_sharding,
     ) = sharding_utils.update_model_sharding(
         opt_graph, loaded_state, loaded_rng_state, ema, loaded_ema_state,
-        mesh=mesh, sharding_strategy=config.sharding.strategy
+        mesh=mesh, sharding_strategy=sharding_strategy
     )
 
     # release memory

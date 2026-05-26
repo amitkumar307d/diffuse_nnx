@@ -11,6 +11,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+# Monkey-patch jax.nn.softmax to always execute in float32 for numerical stability
+import jax.nn
+_original_softmax = jax.nn.softmax
+def stable_softmax(x, axis=-1, where=None, initial=None):
+    x_32 = x.astype(jnp.float32)
+    out_32 = _original_softmax(x_32, axis=axis, where=where, initial=initial)
+    return out_32.astype(x.dtype)
+jax.nn.softmax = stable_softmax
+
 # deps
 from networks.transformers import utils
 
@@ -210,11 +219,12 @@ class DiTBlock(nnx.Module):
     def __init__(
         self, hidden_size: int, num_heads: int, mlp_ratio: float,
         *, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.float32, mlp_dropout: float = 0.0, attn_dropout: float = 0.0,
+        epsilon: float = 1e-6,
         **attn_kwargs
     ):
         
         self.norm1 = nnx.LayerNorm(
-            hidden_size, epsilon=1e-6, use_scale=False, use_bias=False, dtype=dtype, rngs=rngs
+            hidden_size, epsilon=epsilon, use_scale=False, use_bias=False, dtype=dtype, rngs=rngs
         )
         self.attn = nnx.MultiHeadAttention(
             num_heads, hidden_size,
@@ -233,7 +243,7 @@ class DiTBlock(nnx.Module):
             **attn_kwargs
         )
         self.norm2 = nnx.LayerNorm(
-            hidden_size, epsilon=1e-6, use_scale=False, use_bias=False, dtype=dtype, rngs=rngs
+            hidden_size, epsilon=epsilon, use_scale=False, use_bias=False, dtype=dtype, rngs=rngs
         )
 
         mlp_hidden_size = int(hidden_size * mlp_ratio)
@@ -271,10 +281,10 @@ class FinalLayer(nnx.Module):
     """Final Layer for DiT."""
 
     def __init__(
-        self, hidden_size: int, patch_size: int, out_channels: int, *, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.float32
+        self, hidden_size: int, patch_size: int, out_channels: int, *, rngs: nnx.Rngs, dtype: jnp.dtype = jnp.float32, epsilon: float = 1e-6
     ):
         self.norm = nnx.LayerNorm(
-            hidden_size, epsilon=1e-6, use_scale=False, use_bias=False, dtype=dtype, rngs=rngs
+            hidden_size, epsilon=epsilon, use_scale=False, use_bias=False, dtype=dtype, rngs=rngs
         )
         self.linear = nnx.Linear(
             hidden_size, patch_size * patch_size * out_channels,
@@ -331,7 +341,7 @@ class DiT(nnx.Module):
         *,
         rngs: nnx.Rngs               = nnx.Rngs(0),
         dtype: jnp.dtype             = jnp.float32,
-
+        norm_eps: float              = 1e-6,
         return_intermediate_features: bool = False,
     ):
         self.in_channels = in_channels
@@ -385,12 +395,12 @@ class DiT(nnx.Module):
         self.blocks = nnx.List([
             DiTBlock(
                 hidden_size, num_heads, mlp_ratio,
-                dtype=dtype, mlp_dropout=mlp_dropout, attn_dropout=attn_dropout, rngs=rngs
+                dtype=dtype, mlp_dropout=mlp_dropout, attn_dropout=attn_dropout, epsilon=norm_eps, rngs=rngs
             ) for _ in range(depth)
         ])
 
         self.final_layer = FinalLayer(
-            hidden_size, patch_size, self.out_channels, dtype=dtype, rngs=rngs
+            hidden_size, patch_size, self.out_channels, dtype=dtype, epsilon=norm_eps, rngs=rngs
         )
     
     def __call__(

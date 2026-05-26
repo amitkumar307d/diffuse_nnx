@@ -83,8 +83,7 @@ _dit_network_presets = {
     'S': dict(hidden_size=384, depth=12, num_heads=6),
     'B': dict(hidden_size=768, depth=12, num_heads=12),
     'L': dict(hidden_size=1024, depth=24, num_heads=16),
-    'XL': dict(hidden_size=1280, depth=28, num_heads=10),
-}
+    'XL': dict(hidden_size=1152, depth=28, num_heads=16), # use hidden_size=1280, depth=24, num_heads=10 for TPU friendly tiling
 
 _ddt_network_presets = {
     'S': dict(
