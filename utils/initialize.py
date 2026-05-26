@@ -268,7 +268,15 @@ def instantiate_optimizer(
         config=config,
         learning_rate=config.learning_rate,
     )
-    tx = OPTIMIZER_REGISTRY[config.optimizer_class](learning_rate=learning_rate_fn, **config.optimizer)
+    base_tx = OPTIMIZER_REGISTRY[config.optimizer_class](learning_rate=learning_rate_fn, **config.optimizer)
+    if config.get('grad_clip', 0.0) > 0.0:
+        tx = optax.chain(
+            optax.clip_by_global_norm(config.grad_clip),
+            base_tx
+        )
+    else:
+        tx = base_tx
+        
     optimizer = nnx.ModelAndOptimizer(model=model, tx=tx)
     return optimizer, learning_rate_fn
 

@@ -28,6 +28,7 @@ def get_config(options='imagenet_64-B_2'):
 
     config.total_steps           = 7_000_000
     config.epochs                = 0  # Default to 0 (means use total_steps)
+    config.grad_clip             = 0.0  # Default to 0 (disabled)
     config.log_every_steps       = 100
     config.save_every_steps      = 50_000
     config.visualize_every_steps = 25_000

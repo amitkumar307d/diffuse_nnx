@@ -12,6 +12,7 @@ import flax
 import flax.linen as nn
 from flax import nnx
 import jax
+from jax.experimental import multihost_utils
 import jax.numpy as jnp
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 import ml_collections
@@ -53,12 +54,14 @@ def calculate_stats_for_iterable(
     Returns:
         A dictionary containing 'mu' (mean) and 'sigma' (covariance) of features.
     """
-    local_batch_size = batch_size
-    global_batch_size = batch_size * jax.process_count()
+    local_batch_size = batch_size * jax.local_device_count()
     
     if isinstance(image_iter, np.ndarray) or isinstance(image_iter, jnp.ndarray):
         assert len(image_iter.shape) == 4, 'Image array should have shape (N, H, W, C)'
-        image_iter = image_iter.reshape(-1, global_batch_size, *image_iter.shape[1:])
+        # Dynamic truncation to ensure local dataset size is a perfect multiple of local_batch_size
+        num_batches = image_iter.shape[0] // local_batch_size
+        image_iter = image_iter[:num_batches * local_batch_size]
+        image_iter = image_iter.reshape(-1, local_batch_size, *image_iter.shape[1:])
         process_fn = lambda x: x
     else:
         process_fn = lambda x: x[0].permute([0, 2, 3, 1]).numpy()
@@ -264,8 +267,8 @@ def calculate_cls_fake_stats(
         # directly save to gcs
         pass
 
-    # TODO: check if this is necessary
-    utils.lock()
+    # Sync all host processes cleanly using the native JAX multihost barrier
+    multihost_utils.sync_global_devices("fid_eval_barrier")
     
     return all_stats
 
